@@ -1,0 +1,3 @@
+-r requirements.txt
+httpx           # needed by FastAPI's TestClient (tests/test_server.py)
+pytest          # optional: the tests are plain unittest and also run under pytest

@@ -1,0 +1,20 @@
+# --- NEVER commit the library: it is your private data ---
+data/
+backend/data/
+backups/
+*.db
+*.db-wal
+*.db-shm
+*.zip
+
+# python / build
+__pycache__/
+*.pyc
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+New Text Document.txt
+/scrapers/

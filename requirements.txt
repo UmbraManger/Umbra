@@ -1,0 +1,15 @@
+# Runtime dependencies (derived from the imports in backend/*.py).
+# Unpinned on purpose: after your first successful run, execute
+#     pip freeze > requirements.lock.txt
+# and commit that file so builds are reproducible.
+fastapi
+uvicorn
+pydantic
+python-multipart
+requests
+cloudscraper
+pyyaml
+beautifulsoup4
+cryptography>=43        # Argon2id support (falls back to PBKDF2 if unavailable)
+keyring
+pywebview

@@ -1,0 +1,1391 @@
+--- .openclaw/tmp/upload/server.py	2026-09-24 11:33:14.000000002 +0800
++++ obscura-patched/server.py	2026-09-24 12:22:31.000000004 +0800
+@@ -1,10 +1,11 @@
+ """Obscura API — all routes under /api. Frontend is served at /."""
+-import os, sys, json, re, time
++import os, sys, json, re, time, secrets, hmac, logging
+ from typing import Optional
++from urllib.parse import urlparse
+ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Body, Request
+-from fastapi.responses import Response, StreamingResponse
++from fastapi.responses import Response, StreamingResponse, JSONResponse
+ from fastapi.staticfiles import StaticFiles
+-from fastapi.middleware.cors import CORSMiddleware
++from starlette.middleware.base import BaseHTTPMiddleware
+ from pydantic import BaseModel
+ import requests
+ import cloudscraper
+@@ -18,23 +19,46 @@
+ import media as media_engine
+ 
+ db.connect()
+-db.execute("""CREATE TABLE IF NOT EXISTS positions(
+-    media_id TEXT PRIMARY KEY, position REAL NOT NULL DEFAULT 0,
+-    updated_at TEXT)""")
+-# Add nationality column to performers if missing
+-try:
+-    db.execute("ALTER TABLE performers ADD COLUMN nationality TEXT DEFAULT ''")
+-except Exception:
+-    pass  # column already exists
+-# Add gallery column to scenes if missing
+-try:
+-    db.execute("ALTER TABLE scenes ADD COLUMN gallery TEXT DEFAULT '[]'")
+-except Exception:
+-    pass  # column already exists
++# (schema incl. positions + column migrations lives in db._migrate)
++log = logging.getLogger("obscura")
+ 
+ app = FastAPI(title="Obscura", version="0.9")
+-app.add_middleware(CORSMiddleware, allow_origins=["*"],
+-                   allow_methods=["*"], allow_headers=["*"])
++
++# ---- security: per-run token + Host/Origin enforcement ----
++# Everything under /api/ requires the per-run token (header X-Obscura-Token or
++# ?t=). The only exception is a plain GET of /api/images/* and /api/media/*
++# (img/video tags cannot set headers) — those additionally require a
++# same-origin/no Sec-Fetch-Site. Host must be loopback and Origin, when sent,
++# must match it: together these block DNS rebinding and drive-by calls made by
++# other web pages open in the browser. CORS is deliberately NOT enabled — the
++# frontend is same-origin.
++API_TOKEN = secrets.token_hex(32)
++_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
++_ASSET_PREFIXES = ("/api/images/", "/api/media/")
++_TOKEN_HDR = "x-obscura-token"
++
++
++class SecurityMiddleware(BaseHTTPMiddleware):
++    async def dispatch(self, request, call_next):
++        path = request.url.path
++        if not path.startswith("/api/"):
++            return await call_next(request)
++        host_hdr = (request.headers.get("host") or "").lower()
++        if host_hdr.split(":")[0].strip("[]") not in _LOCAL_HOSTS:
++            return JSONResponse({"detail": "forbidden"}, status_code=403)
++        origin = request.headers.get("origin")
++        if origin and urlparse(origin).netloc.lower() != host_hdr:
++            return JSONResponse({"detail": "forbidden"}, status_code=403)
++        sent = request.headers.get(_TOKEN_HDR) or request.query_params.get("t") or ""
++        if sent and hmac.compare_digest(str(sent), API_TOKEN):
++            return await call_next(request)
++        if request.method == "GET" and path.startswith(_ASSET_PREFIXES):
++            if request.headers.get("sec-fetch-site", "") in ("", "same-origin", "none"):
++                return await call_next(request)
++        return JSONResponse({"detail": "missing or invalid token"}, status_code=403)
++
++
++app.add_middleware(SecurityMiddleware)
+ 
+ TABLES = {"movies": "movies", "scenes": "scenes", "performers": "performers",
+           "studios": "studios", "categories": "categories"}
+@@ -145,17 +169,27 @@
+         return {"id": _save_one(kind, body, True)}
+     def update(body: dict = Body(...)):
+         return {"id": _save_one(kind, body, False)}
+-    def delete(rid: str, file: int = 0):
++    def delete(rid: str, file: int = 0, confirm: str = ""):
+         path = None
+         if kind in ("movies", "scenes"):
+             row = db.one(f"SELECT file_path FROM {TABLES[kind]} WHERE id=?", (rid,))
+             if row: path = row["file_path"]
++        # Validate the destructive part BEFORE touching any row.
++        if file and path:
++            if confirm != "DELETE":
++                raise HTTPException(400, 'refusing to delete the video file without confirm="DELETE"')
++            real = os.path.realpath(path)
++            roots = [os.path.realpath(r) for r in (db.get_settings().get("dirs") or [])
++                     if isinstance(r, str) and r]
++            if roots and not any(real == r or real.startswith(r + os.sep) for r in roots):
++                raise HTTPException(403, "file is outside the configured scan folders — refusing to delete it")
++        if kind in ("movies", "scenes"):
+             img_cols = {"movies": ["poster_f", "poster_b"],
+                         "scenes": ["cover_a", "cover_b"]}.get(kind, [])
+             row2 = db.one(f"SELECT {','.join(img_cols)} FROM {TABLES[kind]} WHERE id=?", (rid,))
+             if row2:
+                 for c in img_cols:
+-                    m = re.match(r"/api/images/([A-Za-z0-9]+)$", row2[c] or "")
++                    m = re.match(r"/api/images/(i[0-9a-f]{8})$", row2[c] or "")
+                     if m: crypto.remove_image(m.group(1))
+         if kind == "movies":
+             db.execute("UPDATE scenes SET movie_id=NULL WHERE movie_id=?", (rid,))
+@@ -237,11 +271,27 @@
+ @app.post("/api/images")
+ async def image_upload(file: UploadFile = File(...)):
+     data = await file.read()
+-    img_id = crypto.store_image(data, file.content_type or "image/jpeg")
++    try:
++        img_id = crypto.store_image(data, file.content_type or "image/jpeg")
++    except crypto.Locked as e:
++        raise HTTPException(423, str(e) or "image protection is locked — unlock in Settings")
+     return {"id": img_id, "url": f"/api/images/{img_id}"}
+ 
++@app.post("/api/images/encrypt-all")
++def img_encrypt_all():
++    """Encrypt any blobs stored as plaintext (added while protection was off/locked)."""
++    try:
++        n = crypto.encrypt_plaintext()
++    except crypto.Locked:
++        raise HTTPException(423, "image protection is locked — unlock in Settings")
++    except ValueError as e:
++        raise HTTPException(400, str(e))
++    return {"encrypted": n}
++
+ @app.get("/api/images/{img_id}")
+ def image_get(img_id: str):
++    if not re.fullmatch(r"i[0-9a-f]{8}", img_id or ""):
++        raise HTTPException(404, "not found")
+     try:
+         res = crypto.load_image(img_id)
+     except crypto.Locked:
+@@ -377,8 +427,13 @@
+ def scrapers_list(): return scraper_engine.list_all()
+ 
+ @app.post("/api/scrapers/file")
+-async def scraper_upload(file: UploadFile = File(...), kind: str = Form("movie")):
++async def scraper_upload(file: UploadFile = File(...), kind: str = Form("movie"),
++                         confirm: str = Form("")):
+     content = await file.read()
++    if (file.filename or "").lower().endswith(".py") and \
++            confirm != "I UNDERSTAND PYTHON SCRAPERS RUN AS LOCAL CODE":
++        raise HTTPException(400, "Python scrapers execute as local code — send "
++                                'confirm="I UNDERSTAND PYTHON SCRAPERS RUN AS LOCAL CODE"')
+     try:
+         sid = scraper_engine.add(file.filename, content, kind)
+     except ValueError as e:
+@@ -416,39 +471,83 @@
+     db.del_scraper_site(kind, idx)
+     return {"ok": True}
+ 
++MAX_IMAGE_BYTES = 15 * 1024 * 1024
++
++
++def _safe_image_url(url: str) -> bool:
++    """SSRF guard: public http(s) endpoints only.
++
++    Rejects non-http schemes and hosts that resolve to loopback / private /
++    link-local / reserved / multicast addresses, so a scraper result can't
++    make the server fetch internal services (127.0.0.1, 169.254.169.254, …)."""
++    import socket, ipaddress
++    try:
++        p = urlparse(url)
++        if p.scheme not in ("http", "https") or not p.hostname:
++            return False
++        infos = socket.getaddrinfo(p.hostname, p.port or
++                                   (443 if p.scheme == "https" else 80))
++    except Exception:
++        return False
++    for info in infos:
++        try:
++            ip = ipaddress.ip_address(info[4][0])
++        except ValueError:
++            return False
++        if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
++                or ip.is_multicast or ip.is_unspecified):
++            return False
++    return True
++
++
++def _store_response_image(r) -> str:
++    """Validate a fetched response and store it; raises on non-image/oversized."""
++    r.raise_for_status()
++    ctype = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
++    if ctype and not ctype.startswith("image/"):
++        raise ValueError(f"refusing to store non-image content-type {ctype!r}")
++    if len(r.content) > MAX_IMAGE_BYTES:
++        raise ValueError("image exceeds the 15 MB cap")
++    mime = ctype or "image/jpeg"
++    img_id = crypto.store_image(r.content, mime)
++    return f"/api/images/{img_id}"
++
++
+ def _download_image(url: str) -> str:
+     """Download image from URL, store locally, return /api/images/ path."""
+     if not url or not url.startswith("http"):
+         return url
++    if not _safe_image_url(url):
++        log.warning("[download-image] blocked unsafe image URL: %s", url[:80])
++        return url
+     try:
+         # Vixen/Gamma CDN needs a Referer header
+         extra = {}
+         if 'cdn.' in url or 'images' in url:
+             extra['headers'] = {'Referer': 'https://www.vixen.com/'}
+-        # For IAFD/LetsDoeIt URLs, use their scraper's warmed-up session (bypasses Cloudflare)
++        # For IAFD/LetsDoeIt URLs, use their scraper's warmed-up session
++        # (bypasses Cloudflare) — only when that optional module is installed.
+         if 'iafd.com' in url:
+             try:
+                 import iafd_scraper
+-                r = iafd_scraper.iafd_session.get(url, timeout=15)
+-                r.raise_for_status()
+-                mime = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+-                img_id = crypto.store_image(r.content, mime)
+-                return f"/api/images/{img_id}"
+-            except Exception as e:
+-                print(f"[download-image] iafd session failed: {url[:80]} — {e}")
+-                return url
++            except ImportError:
++                iafd_scraper = None
++            if iafd_scraper is not None:
++                try:
++                    r = iafd_scraper.iafd_session.get(url, timeout=15)
++                    return _store_response_image(r)
++                except Exception as e:
++                    log.warning("[download-image] iafd session failed: %s — %s", url[:80], e)
++                    return url
+         # Use cloudscraper for other Cloudflare-protected sites,
+         # fall back to plain requests for others.
+         try:
+             r = _cf_scraper.get(url, timeout=15, **extra)
+         except Exception:
+             r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0", **extra.get('headers', {})})
+-        r.raise_for_status()
+-        mime = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+-        img_id = crypto.store_image(r.content, mime)
+-        return f"/api/images/{img_id}"
++        return _store_response_image(r)
+     except Exception as e:
+-        print(f"[download-image] failed: {url[:80]} — {e}")
++        log.warning("[download-image] failed: %s — %s", url[:80], e)
+         return url
+ 
+ 
+@@ -501,7 +600,9 @@
+     title = body.get("title", "")
+     url = body.get("url", "")
+     mode = body.get("mode", "scraper")
+-    logging.warning(f"[scrape] kind={kind} title={title!r} url={url!r} mode={mode} body={body}")
++    # metadata only — never log the full request body
++    logging.info("[scrape] kind=%s mode=%s sid=%s has_url=%s", kind, mode,
++                 body.get("scraper_id"), bool(url))
+     try:
+         if mode == "ai":      result = ai_lookup(kind, title, body.get("extra", ""))
+         elif mode == "scraper":
+@@ -567,7 +668,12 @@
+     if not path: raise HTTPException(404, "no video file linked to this record")
+     size = os.path.getsize(path)
+     mime = media_engine.mime_for(path)
+-    rng = media_engine.parse_range(request.headers.get("range"), size)
++    try:
++        rng = media_engine.parse_range(request.headers.get("range"), size)
++    except media_engine.RangeNotSatisfiable:
++        return Response(status_code=416,
++                        headers={"Content-Range": f"bytes */{size}",
++                                 "Accept-Ranges": "bytes"})
+     if rng:
+         start, end = rng
+         headers = {"Content-Range": f"bytes {start}-{end}/{size}",
+@@ -654,17 +760,24 @@
+ 
+ @app.post("/api/tools/titlecase")
+ def titlecase_all():
++    def _cap(w: re.Match) -> str:
++        s = w.group()
++        if len(s) > 1 and s.isupper():
++            return s  # keep acronyms (BBC, XXX, …) intact
++        return s[0].upper() + s[1:].lower()
+     n = 0
+     for table in ("movies", "scenes"):
+         for r in db.query(f"SELECT id, title FROM {table}"):
+-            t2 = re.sub(r"\w\S*", lambda w: w.group()[0].upper() + w.group()[1:].lower(), r["title"])
++            t2 = re.sub(r"\w[\w'’\-]*", _cap, r["title"])
+             if t2 != r["title"]:
+                 db.execute(f"UPDATE {table} SET title=? WHERE id=?", (t2, r["id"])); n += 1
+     return {"changed": n}
+ 
+ # ---- wipe ----
+ @app.post("/api/wipe")
+-def wipe_all():
++def wipe_all(body: dict = Body(default={})):
++    if (body or {}).get("confirm") != "DELETE MY LIBRARY":
++        raise HTTPException(400, 'confirmation required: send {"confirm":"DELETE MY LIBRARY"}')
+     import shutil
+     # Clear all tables
+     for table in TABLES:
+@@ -694,7 +807,9 @@
+         headers={"Content-Disposition": f'attachment; filename="Obscura-Backup-{stamp}.zip"'})
+ 
+ @app.post("/api/backup/restore")
+-async def backup_restore(file: UploadFile = File(...)):
++async def backup_restore(file: UploadFile = File(...), confirm: str = Form("")):
++    if confirm != "RESTORE":
++        raise HTTPException(400, 'confirmation required: send form field confirm="RESTORE"')
+     data = await file.read()
+     try: n = backup_engine.restore_zip(data)
+     except ValueError as e: raise HTTPException(400, str(e))
+@@ -709,4 +824,4 @@
+ 
+ FRONTEND = frontend_dir()
+ if os.path.isdir(FRONTEND):
+-    app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="frontend")
+\ No newline at end of file
++    app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="frontend")
+--- .openclaw/tmp/upload/main.py	2026-09-24 11:33:14.000000002 +0800
++++ obscura-patched/main.py	2026-09-24 12:22:31.000000004 +0800
+@@ -5,7 +5,7 @@
+ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+ 
+ import uvicorn
+-from server import app
++from server import app, API_TOKEN
+ 
+ def find_port(start=8765) -> int:
+     for p in range(start, start + 50):
+@@ -26,13 +26,15 @@
+     import urllib.request
+     for _ in range(100):
+         try:
+-            urllib.request.urlopen(url + "/api/ping", timeout=0.3); break
++            req = urllib.request.Request(url + "/api/ping",
++                                        headers={"X-Obscura-Token": API_TOKEN})
++            urllib.request.urlopen(req, timeout=0.3); break
+         except Exception:
+             time.sleep(0.1)
+ 
+     if "--browser" in sys.argv:
+         import webbrowser
+-        webbrowser.open(url)
++        webbrowser.open(url + f"/?t={API_TOKEN}")
+         print(f"Obscura running at {url} — press Ctrl+C to quit.")
+         try:
+             while True: time.sleep(3600)
+@@ -40,9 +42,9 @@
+             server.should_exit = True
+     else:
+         import webview
+-        webview.create_window("Obscura", url, width=1360, height=860, min_size=(960, 640))
++        webview.create_window("Obscura", url + f"/?t={API_TOKEN}", width=1360, height=860, min_size=(960, 640))
+         webview.start()
+         server.should_exit = True
+ 
+ if __name__ == "__main__":
+-    main()
+\ No newline at end of file
++    main()
+--- .openclaw/tmp/upload/media.py	2026-09-24 11:33:14.000000002 +0800
++++ obscura-patched/media.py	2026-09-24 12:22:31.000000004 +0800
+@@ -1,6 +1,7 @@
+ """Real media serving: HTTP Range streaming, ffprobe metadata,
+ sidecar subtitles (srt→vtt), OS-default-player launching."""
+ import os, re, json, mimetypes, subprocess, sys
++from collections.abc import Iterator
+ 
+ import db
+ 
+@@ -15,11 +16,15 @@
+ SUB_EXT = {".srt", ".vtt", ".ass", ".ssa", ".sub"}
+ 
+ 
+-def _table(kind):
++class RangeNotSatisfiable(Exception):
++    """Requested byte range lies outside the file (HTTP 416)."""
++
++
++def _table(kind: str) -> str | None:
+     return {"movie": "movies", "scene": "scenes"}.get(kind)
+ 
+ 
+-def get_path(kind, rid):
++def get_path(kind: str, rid: str) -> str | None:
+     t = _table(kind)
+     if not t:
+         return None
+@@ -33,22 +38,36 @@
+     return VIDEO_MIME.get(ext) or mimetypes.guess_type(path)[0] or "application/octet-stream"
+ 
+ 
+-def parse_range(header: str | None, size: int):
+-    """Parse an HTTP Range header. Returns (start, end) or None."""
++def parse_range(header: str | None, size: int) -> tuple[int, int] | None:
++    """Parse an HTTP Range header (single range).
++
++    Returns (start, end) inclusive, or None when the header is absent/unsupported.
++    Raises RangeNotSatisfiable when the range lies outside the file, so the
++    caller can answer 416 instead of silently sending the whole file (which
++    breaks seeking in players).
++    """
+     if not header:
+         return None
+-    m = re.match(r"bytes=(\d+)-(\d*)", header)
+-    if not m:
+-        return None
+-    start = int(m.group(1))
+-    end = int(m.group(2)) if m.group(2) else size - 1
+-    if start >= size:
++    m = re.match(r"bytes=(\d*)-(\d*)$", header.strip())
++    if not m or (not m.group(1) and not m.group(2)):
+         return None
+-    end = min(end, size - 1)
+-    return start, end
++    if size <= 0:
++        raise RangeNotSatisfiable()
++    if not m.group(1):
++        # suffix range: last N bytes
++        n = int(m.group(2))
++        if n <= 0:
++            raise RangeNotSatisfiable()
++        start, end = max(0, size - n), size - 1
++    else:
++        start = int(m.group(1))
++        end = int(m.group(2)) if m.group(2) else size - 1
++    if start >= size or end < start:
++        raise RangeNotSatisfiable()
++    return start, min(end, size - 1)
+ 
+ 
+-def iter_file(path: str, start: int = 0, length: int = 0):
++def iter_file(path: str, start: int = 0, length: int = 0) -> Iterator[bytes]:
+     """Yield file chunks for streaming. If length=0, stream the whole file."""
+     with open(path, "rb") as f:
+         f.seek(start)
+@@ -136,7 +155,8 @@
+     """Open the file explorer and select the file."""
+     try:
+         if sys.platform == "win32":
+-            subprocess.Popen(f'explorer /select,"{os.path.normcase(path)}"', shell=True)
++            # arg list + shell=False: a crafted filename must never become shell syntax
++            subprocess.Popen(["explorer", "/select,", os.path.normcase(path)])
+         elif sys.platform == "darwin":
+             subprocess.Popen(["open", "-R", path])
+         else:
+--- .openclaw/tmp/upload/crypto.py	2026-09-24 11:33:15.000000002 +0800
++++ obscura-patched/crypto.py	2026-09-24 12:22:30.000000004 +0800
+@@ -1,6 +1,23 @@
+-"""Image protection — SHA-256 hash for the passphrase, PBKDF2(150k) → AES-256-GCM.
+-Encrypted files live in data/encrypted/, opaque to the OS."""
+-import os, json, hashlib
++"""Image protection — AES-256-GCM per image, key derived with Argon2id
++(PBKDF2-SHA256 @ 600k fallback). Passphrase verification uses an AEAD
++verifier, NOT a fast hash, so imgprot.json is no longer an offline
++dictionary oracle.
++
++Meta format (v2, imgprot.json):
++    {"on": bool, "pass_set": bool,
++     "salt":   "<hex 16 bytes>",
++     "kdf":    {"type": "argon2id", "time_cost": 3,
++                "memory_cost": 65536, "lanes": 4}
++            | {"type": "pbkdf2", "iterations": 600000},
++     "verifier": {"iv": "<hex>", "ct": "<hex>"}}
++
++Legacy v1 meta ({"salt", "hash", ...}: SHA-256 oracle + PBKDF2-150k) is still
++readable — unlock()/set_passphrase() accept it and transparently upgrade the
++record to v2 *keeping the same derived key*, so existing blobs stay valid.
++
++Encrypted blob layout (unchanged): <12-byte IV><AES-GCM ciphertext+tag>.
++"""
++import os, re, json, shutil, hashlib
+ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+ from cryptography.hazmat.primitives import hashes
+ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+@@ -9,101 +26,312 @@
+ ENC_DIR = os.path.join(db.DATA_DIR, "encrypted")
+ META    = os.path.join(db.DATA_DIR, "imgprot.json")
+ 
++# Image ids are generated as "i" + 4 random bytes hex — enforce it everywhere so
++# URL params can never traverse out of ENC_DIR.
++IMG_ID_RE = re.compile(r"^i[0-9a-f]{8}$")
++
++# Known plaintext encrypted under the derived key: decryption success == correct
++# passphrase. Nothing fast to brute-force is stored.
++_VERIFIER_PT = b"obscura-image-protection-verifier-v2"
++
++KDF_PBKDF2_STRONG = {"type": "pbkdf2", "iterations": 600000}
++KDF_PBKDF2_LEGACY = {"type": "pbkdf2", "iterations": 150000}  # v1 blobs/meta
++
++
+ class Locked(Exception):
+     pass
+ 
++
++# ---------------------------------------------------------------- meta ----
+ def _meta() -> dict:
+     try:
+         with open(META, encoding="utf-8") as f:
+             return json.load(f)
+     except Exception:
+-        return {"on": False, "salt": "", "hash": "", "pass_set": False}
++        return {"on": False, "salt": "", "pass_set": False}
+ 
+-def _save_meta(m):
++
++def _save_meta(m: dict) -> None:
+     os.makedirs(db.DATA_DIR, exist_ok=True)
+-    with open(META, "w", encoding="utf-8") as f:
++    tmp = META + ".tmp"
++    with open(tmp, "w", encoding="utf-8") as f:
+         json.dump(m, f)
++    os.replace(tmp, META)
++
++
++def _blob_meta_path(img_id: str) -> str:
++    return os.path.join(ENC_DIR, img_id + ".json")
++
++
++def _blob_path(img_id: str) -> str:
++    return os.path.join(ENC_DIR, img_id + ".bin")
++
++
++# ----------------------------------------------------------------- kdf ----
++def _best_kdf() -> dict:
++    """Argon2id when the cryptography build supports it, else strong PBKDF2."""
++    if _argon2_available():
++        return {"type": "argon2id", "time_cost": 3,
++                "memory_cost": 65536, "lanes": 4}
++    return dict(KDF_PBKDF2_STRONG)
++
++
++def _argon2_available() -> bool:
++    try:
++        from cryptography.hazmat.primitives.kdf.argon2 import Argon2id  # noqa: F401
++        return True
++    except Exception:
++        return False
+ 
+-def _sha(s): return hashlib.sha256(("obscura::" + s).encode()).hexdigest()
+ 
+-def _derive(pw: str, salt: bytes) -> bytes:
+-    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=150000)
+-    return kdf.derive(pw.encode())
++def _derive(pw: str, salt: bytes, kdf: dict) -> bytes:
++    kdf = kdf or KDF_PBKDF2_STRONG
++    if kdf.get("type") == "argon2id":
++        from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
++        return Argon2id(
++            salt=salt, length=32,
++            iterations=int(kdf.get("time_cost", 3)),
++            lanes=int(kdf.get("lanes", 4)),
++            memory_cost=int(kdf.get("memory_cost", 65536)),
++        ).derive(pw.encode())
++    it = int(kdf.get("iterations", KDF_PBKDF2_STRONG["iterations"]))
++    k = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=it)
++    return k.derive(pw.encode())
+ 
++
++def _legacy_sha(s: str) -> str:
++    """v1-only: kept *solely* to read old meta. Never written again."""
++    return hashlib.sha256(("obscura::" + s).encode()).hexdigest()
++
++
++# ------------------------------------------------------------ verifier ----
++def _verifier_make(key: bytes) -> dict:
++    iv = os.urandom(12)
++    return {"iv": iv.hex(), "ct": AESGCM(key).encrypt(iv, _VERIFIER_PT, None).hex()}
++
++
++def _verifier_check(key: bytes, v: dict) -> bool:
++    try:
++        pt = AESGCM(key).decrypt(bytes.fromhex(v["iv"]), bytes.fromhex(v["ct"]), None)
++        return pt == _VERIFIER_PT
++    except Exception:
++        return False
++
++
++def _key_for_passphrase(pw: str, m: dict) -> bytes | None:
++    """Derive and verify a passphrase against meta. None == wrong passphrase."""
++    if not m.get("pass_set"):
++        return None
++    try:
++        salt = bytes.fromhex(m.get("salt") or "")
++    except ValueError:
++        return None
++    if not salt:
++        return None
++    if m.get("verifier"):
++        key = _derive(pw, salt, m.get("kdf") or KDF_PBKDF2_STRONG)
++        return key if _verifier_check(key, m["verifier"]) else None
++    # legacy v1 meta: fast-hash check, PBKDF2-150k key
++    if _legacy_sha(pw) == m.get("hash"):
++        return _derive(pw, salt, KDF_PBKDF2_LEGACY)
++    return None
++
++
++def _upgrade_meta_if_legacy(m: dict, key: bytes) -> None:
++    """v1 -> v2 meta, same derived key (no blob re-encryption needed)."""
++    if m.get("verifier"):
++        return
++    out = {"on": bool(m.get("on")), "pass_set": True,
++           "salt": m.get("salt"), "kdf": dict(KDF_PBKDF2_LEGACY),
++           "verifier": _verifier_make(key)}
++    _save_meta(out)
++
++
++# -------------------------------------------------------------- public ----
+ _state = {"key": None}
+ 
+-def status():
++
++def status() -> dict:
+     m = _meta()
+     return {"on": m.get("on", False), "pass_set": m.get("pass_set", False),
+             "unlocked": _state["key"] is not None}
+ 
+-def set_enabled(on: bool):
++
++def set_enabled(on: bool) -> dict:
+     m = _meta(); m["on"] = bool(on); _save_meta(m)
+     return status()
+ 
+-def set_passphrase(new_pw: str, current_pw: str = None):
++
++def set_passphrase(new_pw: str, current_pw: str | None = None) -> dict:
++    """Set/replace the passphrase and re-key every blob.
++
++    Two-phase: everything is decrypted into memory first — a wrong current
++    passphrase or an undecryptable blob aborts the operation *before* anything
++    on disk is touched, and the failure names the offending files instead of
++    silently orphaning them. Plain blobs are folded into the encrypted set.
++    """
++    if not new_pw:
++        raise ValueError("passphrase must not be empty")
+     m = _meta()
+     old_key = None
+     if m.get("pass_set"):
+-        if _sha(current_pw or "") != m.get("hash"):
++        old_key = _key_for_passphrase(current_pw or "", m)
++        if old_key is None:
+             raise ValueError("wrong current passphrase")
+-        old_key = _derive(current_pw, bytes.fromhex(m["salt"]))
+-    salt = os.urandom(16)
+-    new_key = _derive(new_pw, salt)
+-    if old_key and os.path.isdir(ENC_DIR):
+-        for fn in os.listdir(ENC_DIR):
+-            if not fn.endswith(".bin"): continue
+-            p = os.path.join(ENC_DIR, fn)
+-            blob = open(p, "rb").read()
+-            try:
+-                pt = AESGCM(old_key).decrypt(blob[:12], blob[12:], None)
+-            except Exception:
++
++    new_salt = os.urandom(16)
++    kdf = _best_kdf()
++    new_key = _derive(new_pw, new_salt, kdf)
++
++    # ---- phase 1: decrypt/collect (nothing written yet) ----
++    pending = []   # (bin_path, meta_path, mime, plaintext)
++    if os.path.isdir(ENC_DIR):
++        for fn in sorted(os.listdir(ENC_DIR)):
++            if not fn.endswith(".bin"):
+                 continue
+-            niv = os.urandom(12)
+-            open(p, "wb").write(niv + AESGCM(new_key).encrypt(niv, pt, None))
+-    m.update({"salt": salt.hex(), "hash": _sha(new_pw), "pass_set": True, "on": True})
+-    _save_meta(m)
++            bp = os.path.join(ENC_DIR, fn)
++            mp = bp[:-4] + ".json"
++            bm = {}
++            if os.path.exists(mp):
++                try:
++                    with open(mp, encoding="utf-8") as f:
++                        bm = json.load(f)
++                except Exception:
++                    bm = {}
++            with open(bp, "rb") as f:
++                blob = f.read()
++            if bm.get("enc"):
++                if old_key is None:
++                    raise ValueError(f"{fn} is encrypted but no valid current passphrase was given")
++                try:
++                    pt = AESGCM(old_key).decrypt(blob[:12], blob[12:], None)
++                except Exception:
++                    raise ValueError(
++                        f"{fn} could not be decrypted with the current passphrase — "
++                        "re-key aborted, nothing was changed")
++            else:
++                pt = blob  # plain blob -> will be encrypted below
++            pending.append((bp, mp, bm.get("mime", "image/jpeg"), pt))
++
++    # ---- phase 2: rewrite (tmp + atomic replace, originals backed up) ----
++    if pending:
++        bak = os.path.join(ENC_DIR, ".rekey-backup")
++        shutil.rmtree(bak, ignore_errors=True)
++        os.makedirs(bak, exist_ok=True)
++        try:
++            for bp, mp, mime, pt in pending:
++                for src in (bp, mp):
++                    if os.path.exists(src):
++                        shutil.copy2(src, os.path.join(bak, os.path.basename(src)))
++                iv = os.urandom(12)
++                tmp = bp + ".tmp"
++                with open(tmp, "wb") as f:
++                    f.write(iv + AESGCM(new_key).encrypt(iv, pt, None))
++                os.replace(tmp, bp)
++                _write_blob_meta(mp, {"mime": mime, "enc": True})
++        except Exception:
++            # originals kept in .rekey-backup for manual recovery
++            raise
++        shutil.rmtree(bak, ignore_errors=True)
++
++    _save_meta({"on": True, "pass_set": True, "salt": new_salt.hex(),
++                "kdf": kdf, "verifier": _verifier_make(new_key)})
+     _state["key"] = new_key
+     return status()
+ 
++
+ def unlock(pw: str) -> bool:
+     m = _meta()
+-    if not m.get("pass_set"): return False
+-    if _sha(pw) != m.get("hash"): return False
+-    _state["key"] = _derive(pw, bytes.fromhex(m["salt"]))
++    if not m.get("pass_set"):
++        return False
++    key = _key_for_passphrase(pw, m)
++    if key is None:
++        return False
++    _upgrade_meta_if_legacy(m, key)
++    _state["key"] = key
+     return True
+ 
++
++def encrypt_plaintext() -> int:
++    """Re-encrypt blobs stored as plaintext (protection was off/locked then).
++
++    Requires image protection enabled and unlocked. Returns the count."""
++    m = _meta()
++    if not (m.get("on") and m.get("pass_set")):
++        raise ValueError("image protection is not enabled")
++    key = _state["key"]
++    if not key:
++        raise Locked()
++    n = 0
++    if not os.path.isdir(ENC_DIR):
++        return 0
++    for fn in sorted(os.listdir(ENC_DIR)):
++        if not fn.endswith(".bin"):
++            continue
++        bp = os.path.join(ENC_DIR, fn)
++        mp = bp[:-4] + ".json"
++        bm = {}
++        if os.path.exists(mp):
++            try:
++                with open(mp, encoding="utf-8") as f:
++                    bm = json.load(f)
++            except Exception:
++                bm = {}
++        if bm.get("enc"):
++            continue
++        with open(bp, "rb") as f:
++            pt = f.read()
++        iv = os.urandom(12)
++        tmp = bp + ".tmp"
++        with open(tmp, "wb") as f:
++            f.write(iv + AESGCM(key).encrypt(iv, pt, None))
++        os.replace(tmp, bp)
++        _write_blob_meta(mp, {"mime": bm.get("mime", "image/jpeg"), "enc": True})
++        n += 1
++    return n
++
++
+ def store_image(data: bytes, mime: str) -> str:
+     os.makedirs(ENC_DIR, exist_ok=True)
+     m = _meta()
+-    enc = bool(m.get("on") and _state["key"])
++    on = bool(m.get("on") and m.get("pass_set"))
++    key = _state["key"]
++    if on and not key:
++        # Never silently write plaintext when protection is on: the caller gets
++        # a Locked error instead of a file that quietly dodges the vault.
++        raise Locked("image protection is on but locked — unlock before adding images")
+     img_id = "i" + os.urandom(4).hex()
+-    meta = {"mime": mime or "image/jpeg", "enc": enc}
+-    if enc:
+-        iv = os.urandom(12)
+-        with open(os.path.join(ENC_DIR, img_id + ".bin"), "wb") as f:
+-            f.write(iv + AESGCM(_state["key"]).encrypt(iv, data, None))
+-    else:
+-        with open(os.path.join(ENC_DIR, img_id + ".bin"), "wb") as f:
++    meta = {"mime": mime or "image/jpeg", "enc": bool(on)}
++    tmp = _blob_path(img_id) + ".tmp"
++    with open(tmp, "wb") as f:
++        if on:
++            iv = os.urandom(12)
++            f.write(iv + AESGCM(key).encrypt(iv, data, None))
++        else:
+             f.write(data)
+-    with open(os.path.join(ENC_DIR, img_id + ".json"), "w") as f:
+-        json.dump(meta, f)
++    os.replace(tmp, _blob_path(img_id))
++    _write_blob_meta(_blob_meta_path(img_id), meta)
+     return img_id
+ 
+-def load_image(img_id: str):
+-    bp = os.path.join(ENC_DIR, img_id + ".bin")
+-    mp = os.path.join(ENC_DIR, img_id + ".json")
+-    if not os.path.exists(bp): return None
++
++def load_image(img_id: str) -> tuple[bytes, str] | None:
++    if not IMG_ID_RE.fullmatch(img_id or ""):
++        return None
++    bp, mp = _blob_path(img_id), _blob_meta_path(img_id)
++    if not os.path.exists(bp):
++        return None
+     meta = {}
+     if os.path.exists(mp):
+         try:
+-            with open(mp) as f:
++            with open(mp, encoding="utf-8") as f:
+                 meta = json.load(f)
+-        except Exception: meta = {}
++        except Exception:
++            meta = {}
+     with open(bp, "rb") as f:
+         blob = f.read()
+     if meta.get("enc"):
+-        if not _state["key"]: raise Locked()
++        if not _state["key"]:
++            raise Locked()
+         try:
+             data = AESGCM(_state["key"]).decrypt(blob[:12], blob[12:], None)
+         except Exception:
+@@ -112,9 +340,21 @@
+         data = blob
+     return data, meta.get("mime", "image/jpeg")
+ 
+-def remove_image(img_id: str):
+-    """Delete an image's encrypted blob + metadata (used when its record is deleted)."""
++
++def remove_image(img_id: str) -> None:
++    """Delete an image's blob + metadata (used when its record is deleted)."""
++    if not IMG_ID_RE.fullmatch(img_id or ""):
++        return
+     for suffix in (".bin", ".json"):
+-        p = os.path.join(ENC_DIR, img_id + suffix)
+-        try: os.remove(p)
+-        except OSError: pass
+\ No newline at end of file
++        try:
++            os.remove(os.path.join(ENC_DIR, img_id + suffix))
++        except OSError:
++            pass
++
++
++# --------------------------------------------------------------- utils ----
++def _write_blob_meta(path: str, meta: dict) -> None:
++    tmp = path + ".tmp"
++    with open(tmp, "w", encoding="utf-8") as f:
++        json.dump(meta, f)
++    os.replace(tmp, path)
+--- .openclaw/tmp/upload/db.py	2026-09-24 11:33:13.000000002 +0800
++++ obscura-patched/db.py	2026-09-24 12:22:31.000000004 +0800
+@@ -1,24 +1,46 @@
+-"""SQLite storage — everything lives in data/ next to the executable (portable)."""
+-import os, sys, sqlite3, json, uuid, threading
++"""SQLite storage — everything lives in data/ next to the executable (portable).
++
++Schema changes are versioned via PRAGMA user_version (see SCHEMA_VERSION /
++_MIGRATIONS) so `migrate()` is ordered and idempotent instead of a pile of
++try/except ALTERs. Existing pre-versioning databases start at 0; every
++migration step is idempotent (ADD COLUMN failures for columns that already
++exist are ignored) so they converge safely.
++"""
++from __future__ import annotations
++
++import json
++import os
++import sqlite3
++import sys
++import threading
++import uuid
++from typing import Any, Sequence
++
++SCHEMA_VERSION = 2
++
+ 
+ def app_dir() -> str:
+     if getattr(sys, "frozen", False):
+         return os.path.dirname(os.path.abspath(sys.executable))
+     return os.path.dirname(os.path.abspath(__file__))
+ 
+-DATA_DIR    = os.path.join(app_dir(), "data")
+-POSTER_DIR  = os.path.join(DATA_DIR, "posters")
+-SCRAPER_DIR = os.path.join(DATA_DIR, "scrapers")
+-DB_PATH     = os.path.join(DATA_DIR, "obscura.db")
+ 
+-def ensure_dirs():
++DATA_DIR: str = os.path.join(app_dir(), "data")
++POSTER_DIR: str = os.path.join(DATA_DIR, "posters")
++SCRAPER_DIR: str = os.path.join(DATA_DIR, "scrapers")
++DB_PATH: str = os.path.join(DATA_DIR, "obscura.db")
++
++
++def ensure_dirs() -> None:
+     for d in (DATA_DIR, POSTER_DIR, SCRAPER_DIR):
+         os.makedirs(d, exist_ok=True)
+ 
+-_conn = None
++
++_conn: sqlite3.Connection | None = None
+ _lock = threading.Lock()
+ 
+-def connect():
++
++def connect() -> sqlite3.Connection:
+     global _conn
+     if _conn is None:
+         with _lock:
+@@ -30,14 +52,18 @@
+                 _migrate()
+     return _conn
+ 
+-def close():
++
++def close() -> None:
+     """Close the shared connection (used by backup/restore)."""
+     global _conn
+     if _conn is not None:
+-        try: _conn.close()
+-        except Exception: pass
++        try:
++            _conn.close()
++        except Exception:
++            pass
+         _conn = None
+ 
++
+ SCHEMA = """
+ CREATE TABLE IF NOT EXISTS studios(
+   id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT DEFAULT '',
+@@ -54,7 +80,7 @@
+   measurements TEXT, boobs TEXT, piercings TEXT DEFAULT '', tattoos TEXT DEFAULT '',
+   career_start INTEGER, photo TEXT DEFAULT '', created_at TEXT,
+   twitter TEXT DEFAULT '', instagram TEXT DEFAULT '', onlyfans TEXT DEFAULT '',
+-  urls TEXT DEFAULT '', nationality TEXT DEFAULT '');  
++  urls TEXT DEFAULT '', nationality TEXT DEFAULT '');
+ CREATE TABLE IF NOT EXISTS movies(
+   id TEXT PRIMARY KEY, title TEXT NOT NULL, year INTEGER, studio_id TEXT,
+   duration_min INTEGER DEFAULT 0, scenes INTEGER DEFAULT 0, director TEXT DEFAULT '',
+@@ -67,74 +93,103 @@
+   cover_a TEXT DEFAULT '', cover_b TEXT DEFAULT '', thumb INTEGER DEFAULT 0,
+   fav INTEGER DEFAULT 0, file_path TEXT DEFAULT '', created_at TEXT,
+   actor_ids TEXT DEFAULT '[]', category_ids TEXT DEFAULT '[]');
++CREATE TABLE IF NOT EXISTS positions(
++  media_id TEXT PRIMARY KEY, position REAL NOT NULL DEFAULT 0, updated_at TEXT);
+ CREATE TABLE IF NOT EXISTS settings(
+   key TEXT PRIMARY KEY, value TEXT NOT NULL);
+ """
+ 
+-def _migrate():
++# Ordered column migrations: version -> [(table, "column TYPE DEFAULT ..."), ...]
++# Every step is idempotent: ADD COLUMN on an existing column raises
++# OperationalError, which is expected and ignored (pre-versioning DBs may
++# already carry columns from any step).
++_MIGRATIONS: dict[int, list[tuple[str, str]]] = {
++    1: [
++        ("studios", "created_at TEXT"),
++        ("categories", "created_at TEXT"),
++        ("studios", "logo TEXT DEFAULT ''"),
++        ("studios", "twitter TEXT DEFAULT ''"),
++        ("studios", "instagram TEXT DEFAULT ''"),
++        ("studios", "parent_id TEXT DEFAULT ''"),
++        ("performers", "twitter TEXT DEFAULT ''"),
++        ("performers", "instagram TEXT DEFAULT ''"),
++        ("performers", "onlyfans TEXT DEFAULT ''"),
++        ("performers", "urls TEXT DEFAULT ''"),
++        ("performers", "nationality TEXT DEFAULT ''"),
++    ],
++    2: [
++        ("scenes", "gallery TEXT DEFAULT '[]'"),
++    ],
++}
++
++
++def _migrate() -> None:
+     c = connect()
+     c.executescript(SCHEMA)
+-    for table in ("studios", "categories"):
+-        try:
+-            c.execute(f"ALTER TABLE {table} ADD COLUMN created_at TEXT")
+-        except Exception:
+-            pass
+-    # Add logo / social columns to studios if missing
+-    for col in ("logo", "twitter", "instagram", "parent_id"):
+-        try:
+-            c.execute(f"ALTER TABLE studios ADD COLUMN {col} TEXT DEFAULT ''")
+-        except Exception:
+-            pass
+-    # Add social media columns to performers if missing
+-    for col, default in [("twitter", ""), ("instagram", ""), ("onlyfans", ""), ("urls", ""), ("nationality", "")]:
+-        try:
+-            c.execute(f"ALTER TABLE performers ADD COLUMN {col} TEXT DEFAULT '{default}'")
+-        except Exception:
+-            pass
++    ver: int = c.execute("PRAGMA user_version").fetchone()[0]
++    for version in range(ver + 1, SCHEMA_VERSION + 1):
++        for table, column_def in _MIGRATIONS.get(version, []):
++            try:
++                c.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
++            except sqlite3.OperationalError:
++                pass  # column already exists
++    if ver != SCHEMA_VERSION:
++        c.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+     c.commit()
+ 
+-def query(sql, params=()):
++
++def query(sql: str, params: Sequence[Any] = ()) -> list[dict]:
+     with _lock:
+         return [dict(r) for r in connect().execute(sql, params).fetchall()]
+ 
+-def one(sql, params=()):
++
++def one(sql: str, params: Sequence[Any] = ()) -> dict | None:
+     with _lock:
+         rows = [dict(r) for r in connect().execute(sql, params).fetchall()]
+         return rows[0] if rows else None
+ 
+-def execute(sql, params=()):
++
++def execute(sql: str, params: Sequence[Any] = ()) -> None:
+     with _lock:
+         c = connect()
+         c.execute(sql, params)
+         c.commit()
+ 
+-def new_id(prefix):
++
++def new_id(prefix: str) -> str:
+     return f"{prefix}-{uuid.uuid4().hex[:8]}"
+ 
++
+ def get_settings() -> dict:
+     row = one("SELECT value FROM settings WHERE key='app'")
+     if row:
+-        try: return json.loads(row["value"])
+-        except Exception: pass
++        try:
++            return json.loads(row["value"])
++        except Exception:
++            pass
+     return {}
+ 
+-def save_settings(s: dict):
++
++def save_settings(s: dict) -> None:
+     execute("INSERT INTO settings(key,value) VALUES('app',?) "
+             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+             (json.dumps(s),))
+ 
++
+ def get_scraper_sites() -> dict:
+     s = get_settings()
+     return s.get("scraperSites", {})
+ 
+-def add_scraper_site(kind: str, scraper_id: str, domain: str):
++
++def add_scraper_site(kind: str, scraper_id: str, domain: str) -> None:
+     s = get_settings()
+     s.setdefault("scraperSites", {})
+     s["scraperSites"].setdefault(kind, [])
+     s["scraperSites"][kind].append({"scraper_id": scraper_id, "domain": domain})
+     save_settings(s)
+ 
+-def del_scraper_site(kind: str, idx: int):
++
++def del_scraper_site(kind: str, idx: int) -> None:
+     s = get_settings()
+     if "scraperSites" in s and kind in s["scraperSites"]:
+         s["scraperSites"][kind].pop(idx)
+@@ -142,4 +197,4 @@
+             del s["scraperSites"][kind]
+         if not s["scraperSites"]:
+             del s["scraperSites"]
+-    save_settings(s)
+\ No newline at end of file
++    save_settings(s)
+--- .openclaw/tmp/upload/backup.py	2026-09-24 11:33:14.000000002 +0800
++++ obscura-patched/backup.py	2026-09-24 12:22:30.000000004 +0800
+@@ -1,12 +1,12 @@
+ """Backup / restore — one .zip containing the database snapshot, encrypted
+ images, installed scrapers, image-protection and scan state, and settings
+ (API key excluded — it lives in the keyring)."""
+-import os, io, json, zipfile, sqlite3
++import os, io, json, shutil, zipfile, sqlite3
+ import db
+ 
+ NAME_DB, NAME_SET, NAME_IMG, NAME_SCAN = "obscura.db", "settings.json", "imgprot.json", "scanstate.json"
+ 
+-def _safe_members(zf):
++def _safe_members(zf: zipfile.ZipFile) -> list[str]:
+     bad = []
+     for n in zf.namelist():
+         parts = n.replace("\\", "/").split("/")
+@@ -52,12 +52,34 @@
+     if NAME_DB not in zf.namelist():
+         raise ValueError("backup does not contain obscura.db")
+     db.ensure_dirs()
++    # Stage and validate the incoming DB BEFORE it replaces the live one.
++    staged = db.DB_PATH + ".incoming"
++    with zf.open(NAME_DB) as src, open(staged, "wb") as out:
++        out.write(src.read())
++    try:
++        con = sqlite3.connect(staged)
++        try:
++            integrity = con.execute("PRAGMA integrity_check").fetchone()[0]
++            tables = {r[0] for r in
++                      con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
++        finally:
++            con.close()
++        if integrity != "ok":
++            raise ValueError("backup database failed the integrity check — restore aborted")
++        if not {"settings", "movies", "scenes"}.issubset(tables):
++            raise ValueError("backup database is not an Obscura library — restore aborted")
++    except Exception:
++        try: os.remove(staged)
++        except OSError: pass
++        raise
+     db.close()
+     for suffix in ("-wal", "-shm"):
+         try: os.remove(db.DB_PATH + suffix)
+         except OSError: pass
+-    with zf.open(NAME_DB) as src, open(db.DB_PATH, "wb") as out:
+-        out.write(src.read())
++    # Keep the previous library as obscura.db.prev (manual rollback point).
++    if os.path.exists(db.DB_PATH):
++        shutil.copy2(db.DB_PATH, db.DB_PATH + ".prev")
++    os.replace(staged, db.DB_PATH)
+     for name in zf.namelist():
+         if name == NAME_DB: continue
+         if name in (NAME_IMG, NAME_SCAN, NAME_SET) or \
+@@ -72,4 +94,4 @@
+             s = json.loads(zf.read(NAME_SET).decode("utf-8"))
+             if isinstance(s, dict): db.save_settings(s)
+         except Exception: pass
+-    return len(zf.namelist())
+\ No newline at end of file
++    return len(zf.namelist())
+--- .openclaw/tmp/upload/scanner.py	2026-09-24 11:33:14.000000002 +0800
++++ obscura-patched/scanner.py	2026-09-24 12:22:31.000000004 +0800
+@@ -1,5 +1,5 @@
+ """Scan directories → candidate files → import as movies/scenes with metadata + images."""
+-import os, re, json, subprocess
++import os, json, subprocess
+ import db
+ 
+ RESUME = os.path.join(db.DATA_DIR, "scanstate.json")
+@@ -11,10 +11,10 @@
+     try: return json.load(open(RESUME, encoding="utf-8"))
+     except Exception: return {"done": []}
+ 
+-def _save_state(s):
++def _save_state(s: dict) -> None:
+     json.dump(s, open(RESUME, "w", encoding="utf-8"))
+ 
+-def walk(dirs):
++def walk(dirs: list) -> list[dict]:
+     found = []
+     for d in dirs:
+         if not os.path.isdir(d): continue
+@@ -27,16 +27,19 @@
+                     found.append({"path": p, "name": f, "size": size, "dir": root})
+     return found
+ 
+-def _re_year(w):
++def _re_year(w: str) -> bool:
+     return len(w) == 4 and w.isdigit() and 1900 <= int(w) <= 2100
+ 
+-def guess_title(path):
+-    base = os.path.splitext(os.path.basename(path))[0]
+-    base = base.replace(".", " ").replace("_", " ").replace("-", " ")
++def guess_title(path: str) -> str:
++    name = os.path.basename(path)
++    stem, ext = os.path.splitext(name)
++    if not ext and stem.startswith("."):
++        stem = ""  # splitext gotcha: '.mp4' parses as a dotfile with no extension
++    base = stem.replace(".", " ").replace("_", " ").replace("-", " ")
+     base = " ".join(w for w in base.split() if not _re_year(w))
+     return base.strip().title() or "Untitled"
+ 
+-def probe_duration(path):
++def probe_duration(path: str) -> int | None:
+     """Duration in minutes (int) via ffprobe, or None if unavailable."""
+     try:
+         r = subprocess.run(
+@@ -49,7 +52,7 @@
+     except Exception:
+         return None
+ 
+-def guess_kind(path, duration_min=None):
++def guess_kind(path: str, duration_min: int | None = None) -> str:
+     """Duration is the strongest signal (>=50 min = movie), then name keywords, then size."""
+     p = path.lower()
+     size_mb = 0
+@@ -63,7 +66,7 @@
+     if size_mb and size_mb < 350: return "scene"
+     return "scene"
+ 
+-def find_posters(path):
++def find_posters(path: str) -> list[str]:
+     d, base = os.path.split(path)
+     stem = os.path.splitext(base)[0].lower()
+     out = []
+@@ -77,22 +80,22 @@
+         pass
+     return out
+ 
+-def is_imported(path):
++def is_imported(path: str) -> bool:
+     return path in _state().get("done", [])
+ 
+-def mark_done(path):
++def mark_done(path: str) -> None:
+     s = _state()
+     if path not in s.setdefault("done", []):
+         s["done"].append(path)
+         _save_state(s)
+ 
+-def remove_done(path):
++def remove_done(path: str) -> None:
+     s = _state()
+     if path in s.get("done", []):
+         s["done"] = [p for p in s["done"] if p != path]
+         _save_state(s)
+ 
+-def _img_ref(path):
++def _img_ref(path: str) -> str:
+     from crypto import store_image
+     import mimetypes
+     with open(path, "rb") as f:
+@@ -100,10 +103,12 @@
+     mime = mimetypes.guess_type(path)[0] or "image/jpeg"
+     return "/api/images/" + store_image(data, mime)
+ 
+-def import_file(path: str, kind: str, title: str, year=None, date=None,
+-                studio_id=None, movie_id=None, duration_min=0, director="",
+-                desc="", actor_ids=None, category_ids=None, fav=False,
+-                copy_posters=True) -> dict:
++def import_file(path: str, kind: str, title: str, year: int | None = None,
++                date: str | None = None, studio_id: str | None = None,
++                movie_id: str | None = None, duration_min: int = 0, director: str = "",
++                desc: str = "", actor_ids: list | None = None,
++                category_ids: list | None = None, fav: bool = False,
++                copy_posters: bool = True) -> dict:
+     rec = {
+         "id": db.new_id("mv" if kind == "movie" else "sc"),
+         "title": title or guess_title(path),
+@@ -132,4 +137,4 @@
+         cols = list(rec); qs = ",".join("?" * len(rec))
+         db.execute(f"INSERT INTO scenes ({','.join(cols)}) VALUES ({qs})", list(rec.values()))
+     mark_done(path)
+-    return rec
+\ No newline at end of file
++    return rec
+--- .openclaw/tmp/upload/p1api.py	2026-09-24 11:33:14.000000002 +0800
++++ obscura-patched/p1api.py	2026-09-24 12:22:31.000000006 +0800
+@@ -24,16 +24,15 @@
+                           '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+         })
+         r.raise_for_status()
+-        for cookie in r.cookies:
+-            if cookie.name == 'instance_token':
+-                _tokens[site_url] = cookie.value
+-                return cookie.value
+-        for val in r.headers.get('set-cookie', '').split(','):
+-            if 'instance_token' in val:
+-                m = re.search(r'instance_token=([^;]+)', val)
+-                if m:
+-                    _tokens[site_url] = m.group(1)
+-                    return m.group(1)
++        tok = r.cookies.get('instance_token')
++        if tok:
++            _tokens[site_url] = tok
++            return tok
++        # Fallback: some stacks only surface it in the raw Set-Cookie header.
++        m = re.search(r'instance_token=([^;,\s]+)', r.headers.get('set-cookie', ''))
++        if m:
++            _tokens[site_url] = m.group(1)
++            return m.group(1)
+     except Exception:
+         pass
+     return None
+@@ -83,7 +82,7 @@
+ 
+ def get_best_image(images_dict):
+     """Extract best image URL from P1 API images object.
+-    
++
+     images.poster -> {"0": {xs: {url}, sm: {url}, md: {url}, lg: {url}}}
+     """
+     if not isinstance(images_dict, dict):
+--- .openclaw/tmp/upload/algolia.py	2026-09-24 11:33:13.000000002 +0800
++++ obscura-patched/algolia.py	2026-09-24 12:22:30.000000004 +0800
+@@ -54,7 +54,7 @@
+ 
+ 
+ def parse_date(raw):
+-    """Parse date from various formats."""
++    """Parse date from various formats into YYYY-MM-DD. Returns None on garbage."""
+     if not raw:
+         return None
+     # Unix timestamp
+@@ -65,12 +65,22 @@
+         except Exception:
+             return None
+     raw = str(raw).strip()
+-    for fmt in ('%Y-%m-%d', '%Y-%m-%dT%H:%M:%S', '%B %d, %Y', '%b %d, %Y', '%m/%d/%Y'):
++    if not raw:
++        return None
++    # ISO-8601 first (covers '2021-05-04', '2021-05-04T12:00:00Z', offsets…)
++    try:
++        return datetime.fromisoformat(raw.replace('Z', '+00:00')).strftime('%Y-%m-%d')
++    except ValueError:
++        pass
++    for fmt in ('%Y-%m-%d', '%Y-%m-%dT%H:%M:%S', '%B %d, %Y', '%b %d, %Y',
++                '%m/%d/%Y', '%d/%m/%Y', '%Y/%m/%d'):
+         try:
+-            return datetime.strptime(raw[:len(fmt)+5], fmt).strftime('%Y-%m-%d')
+-        except (ValueError, IndexError):
++            return datetime.strptime(raw, fmt).strftime('%Y-%m-%d')
++        except ValueError:
+             continue
+-    return raw[:10] if len(raw) >= 10 else raw
++    # date prefix of a longer string ('2021-05-04 something')
++    m = re.match(r'(\d{4}-\d{2}-\d{2})', raw)
++    return m.group(1) if m else None
+ 
+ 
+ def parse_duration(raw):
+@@ -92,7 +102,6 @@
+ 
+ def scene_image_from_hit(hit):
+     """Extract scene thumbnail from Algolia hit."""
+-    clip_id = hit.get('clip_id')
+     movie_id = hit.get('movie_id')
+     pictures = hit.get('pictures')
+ 
+--- .openclaw/tmp/upload/scrapers.py	2026-09-24 11:33:14.000000002 +0800
++++ obscura-patched/scrapers.py	2026-09-24 12:22:31.000000004 +0800
+@@ -65,6 +65,11 @@
+     _save_meta(meta)
+ 
+ def run_python(path: str, payload: dict) -> dict:
++    # Execution gate: Python scrapers are arbitrary local code — off by default.
++    if not db.get_settings().get("pyScrapers"):
++        raise ValueError("Python scrapers are disabled — enable "
++                         "Settings › External Scrapers › Python Scrapers "
++                         "(they execute as local code)")
+     spec = importlib.util.spec_from_file_location("obscura_scraper_" + uuid.uuid4().hex, path)
+     mod = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(mod)
+@@ -147,4 +152,4 @@
+ #   title:    { selector: "h1.title",   attr: text }
+ #   year:     { selector: "span.year",  attr: text, transform: int }
+ #   poster_f: { selector: "img.poster", attr: src }
+-#   desc:     { selector: "div.synopsis", attr: text }
+\ No newline at end of file
++#   desc:     { selector: "div.synopsis", attr: text }
+--- .openclaw/tmp/upload/keystore.py	2026-09-24 11:33:13.000000002 +0800
++++ obscura-patched/keystore.py	2026-09-24 12:22:31.000000004 +0800
+@@ -13,7 +13,7 @@
+ def available() -> bool:
+     return _OK
+ 
+-def get_key():
++def get_key() -> str | None:
+     if not _OK: return None
+     try: return _kr.get_password(SERVICE, ENTRY)
+     except Exception: return None
+@@ -26,4 +26,4 @@
+         else: _kr.delete_password(SERVICE, ENTRY)
+         return True
+     except Exception:
+-        return False
+\ No newline at end of file
++        return False
