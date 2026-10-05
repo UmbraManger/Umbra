@@ -72,8 +72,8 @@ class IsolatedCase(unittest.TestCase):
             "scrapers": scrapers.META,
         }
         db.close()
-        # A test that deadlocks db leaves the old lock held forever; start clean.
-        db._lock = threading.Lock()
+        # Fresh reentrant lock per test (matches db.connect's contract, bug #1).
+        db._lock = threading.RLock()
         db.DATA_DIR = self.data
         db.POSTER_DIR = os.path.join(self.data, "posters")
         db.SCRAPER_DIR = os.path.join(self.data, "scrapers")
@@ -102,7 +102,9 @@ class IsolatedCase(unittest.TestCase):
 
     # small conveniences ------------------------------------------------
     def tmpfile(self, relpath: str, content: bytes = b"x") -> str:
-        p = os.path.join(self._tmp, "files", relpath)
+        # normpath: relpath often mixes '/' (e.g. "lib/a.mp4"); normalize so the
+        # returned path string-compares equal to os.walk()'s '\' output on Windows.
+        p = os.path.normpath(os.path.join(self._tmp, "files", relpath))
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, "wb") as f:
             f.write(content)
