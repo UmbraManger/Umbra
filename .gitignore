@@ -16,5 +16,14 @@ build/
 dist/
 *.egg-info/
 .pytest_cache/
+
+# pyinstaller debug variants (build/ and dist/ already cover the default names)
+build_dbg/
+dist_dbg/
+*.log
+
+# local tooling state
+.codegraph/
+.agents/
 New Text Document.txt
 /scrapers/
