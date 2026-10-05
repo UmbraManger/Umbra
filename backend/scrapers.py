@@ -9,6 +9,7 @@ import importlib.util
 import requests, yaml
 from bs4 import BeautifulSoup
 import db
+import net_guard
 
 META = os.path.join(db.SCRAPER_DIR, "meta.json")
 
@@ -113,6 +114,8 @@ def run_yaml(path: str, title: str = "", url: str = "") -> dict:
         tpl = (cfg.get("search") or {}).get("url", "")
         if tpl and title: target = tpl.replace("{title}", quote(title))
     if not target: raise ValueError("no url and no search template in yaml")
+    if not net_guard.safe_image_url(target):
+        raise ValueError("blocked unsafe scraper target URL (private/loopback address)")
     r = requests.get(target, timeout=25, headers={"User-Agent": "Mozilla/5.0 (Obscura)"})
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")

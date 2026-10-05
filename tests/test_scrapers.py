@@ -1,7 +1,9 @@
 import os
+import unittest
 from unittest import mock
 
 import db
+import net_guard
 import scrapers
 from .helpers import IsolatedCase
 
@@ -60,7 +62,8 @@ class PythonScraperTests(IsolatedCase):
 class YamlScraperTests(IsolatedCase):
     def test_selectors_and_transforms(self):
         sid = scrapers.add("site.yml", YAML, "movie")
-        with mock.patch.object(scrapers.requests, "get", return_value=FakeResponse()) as g:
+        with mock.patch.object(scrapers.requests, "get", return_value=FakeResponse()) as g, \
+                _stub_public_dns():        # run_yaml now guards the target (P1 SSRF)
             out = scrapers.run_by_id(sid, title="My Title")
         self.assertEqual(out, {"title": "Alpha", "year": 1999,
                                "poster_f": "http://x.test/p.jpg"})
@@ -104,3 +107,72 @@ class KnownBugTests(IsolatedCase):
                               "type": "python", "kind": "movie", "enabled": True}])
         scrapers.remove("x1")
         self.assertTrue(os.path.exists(victim))
+
+
+# net_guard resolves the target host before fetching; example.test is reserved
+# (RFC 6761) and never resolves on this machine, so tests whose fetch should be
+# ALLOWED stub the resolver to one public address. Blocked cases use numeric
+# IPs, which getaddrinfo parses locally — no live network in any test here.
+_PUBLIC_DNS = [(2, 1, 6, "", ("93.184.216.34", 443))]
+
+
+def _stub_public_dns():
+    return mock.patch("net_guard.socket.getaddrinfo", return_value=_PUBLIC_DNS)
+
+
+class YamlTargetGuardTests(IsolatedCase):
+    """Regression (P1, SSRF): run_yaml's target — the caller-supplied url or the
+    YAML search.url template — must pass net_guard before any fetch."""
+
+    def _yaml(self, tpl: str) -> str:
+        return self.tmpfile("guard.yml",
+                            f'search: {{url: "{tpl}"}}\nfields: {{}}\n'.encode())
+
+    def test_run_yaml_blocks_loopback_target(self):
+        p = self._yaml("http://127.0.0.1:9/x")
+        with mock.patch.object(scrapers.requests, "get") as g, \
+                mock.patch("socket.create_connection") as conn:
+            with self.assertRaisesRegex(ValueError, "blocked unsafe"):
+                scrapers.run_yaml(p, title="x")
+        g.assert_not_called()
+        conn.assert_not_called()
+
+    def test_run_yaml_blocks_cloud_metadata_target(self):
+        p = self._yaml("http://169.254.169.254/latest/meta-data/")
+        with mock.patch.object(scrapers.requests, "get") as g:
+            with self.assertRaisesRegex(ValueError, "blocked unsafe"):
+                scrapers.run_yaml(p, title="x")
+        g.assert_not_called()
+
+    def test_run_yaml_allows_public_https(self):
+        p = self._yaml("https://example.test/search?q={title}")
+        with mock.patch.object(scrapers.requests, "get", return_value=FakeResponse()) as g, \
+                _stub_public_dns():
+            scrapers.run_yaml(p, title="My Title")
+        g.assert_called_once()
+        self.assertIn("https://example.test/search?q=My%20Title",
+                      g.call_args.args[0])
+
+    def test_run_yaml_rejects_non_http_scheme(self):
+        p = self._yaml("file:///C:/Windows/win.ini")
+        with mock.patch.object(scrapers.requests, "get") as g:
+            with self.assertRaisesRegex(ValueError, "blocked unsafe"):
+                scrapers.run_yaml(p, title="x")
+        g.assert_not_called()
+
+
+class NetGuardTests(unittest.TestCase):
+    """safe_image_url unit checks — numeric hosts only, so getaddrinfo parses
+    them locally and no DNS query leaves the machine."""
+
+    def test_guard_blocks_loopback(self):
+        self.assertFalse(net_guard.safe_image_url("http://127.0.0.1/"))
+
+    def test_guard_blocks_cloud_metadata(self):
+        self.assertFalse(net_guard.safe_image_url("http://169.254.169.254/"))
+
+    def test_guard_blocks_private_lan(self):
+        self.assertFalse(net_guard.safe_image_url("http://10.0.0.1/"))
+
+    def test_guard_blocks_non_url(self):
+        self.assertFalse(net_guard.safe_image_url("not-a-url"))

@@ -11,6 +11,7 @@ import requests
 import cloudscraper
 
 import db, crypto, keystore, backup as backup_engine
+from net_guard import safe_image_url
 
 # cloudscraper session for downloading images from Cloudflare-protected sites
 _cf_scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False})
@@ -495,32 +496,6 @@ def del_scraper_site(kind: str, idx: int):
 MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
 
-def _safe_image_url(url: str) -> bool:
-    """SSRF guard: public http(s) endpoints only.
-
-    Rejects non-http schemes and hosts that resolve to loopback / private /
-    link-local / reserved / multicast addresses, so a scraper result can't
-    make the server fetch internal services (127.0.0.1, 169.254.169.254, …)."""
-    import socket, ipaddress
-    try:
-        p = urlparse(url)
-        if p.scheme not in ("http", "https") or not p.hostname:
-            return False
-        infos = socket.getaddrinfo(p.hostname, p.port or
-                                   (443 if p.scheme == "https" else 80))
-    except Exception:
-        return False
-    for info in infos:
-        try:
-            ip = ipaddress.ip_address(info[4][0])
-        except ValueError:
-            return False
-        if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
-                or ip.is_multicast or ip.is_unspecified):
-            return False
-    return True
-
-
 def _store_response_image(r) -> str:
     """Validate a fetched response and store it; raises on non-image/oversized."""
     r.raise_for_status()
@@ -538,7 +513,7 @@ def _download_image(url: str) -> str:
     """Download image from URL, store locally, return /api/images/ path."""
     if not url or not url.startswith("http"):
         return url
-    if not _safe_image_url(url):
+    if not safe_image_url(url):
         log.warning("[download-image] blocked unsafe image URL: %s", url[:80])
         return url
     try:
