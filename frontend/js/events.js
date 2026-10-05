@@ -280,22 +280,32 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn danger" id="bulk-del-ok"><i data-lucide="trash-2"></i>Delete ${ids.length}</button>`,
    mount(bl,f){
     $('#bulk-del-ok',f)?.addEventListener('click',async()=>{
+     let deleted=0,failed=0;
      for(const id of ids){
       const item=byTabId(tab,id);if(!item)continue;
-      if(Sync.on){try{await fetch(`/api/${tab}/${id}`,{method:'DELETE'})}catch(e){}}
+      if(Sync.on){
+       try{
+        const r=await fetch(`/api/${tab}/${id}`,{method:'DELETE'});
+        if(!r.ok)throw new Error('HTTP '+r.status);
+       }catch(e){failed++;continue}
+      }
+      deleted++;
       const arr=DB[tab];const i=arr.indexOf(item);if(i>-1)arr.splice(i,1);
       if(tab==='movies')DB.scenes.forEach(s=>{if(s.movieId===id)s.movieId=null});
       Positions.clear(tab.replace(/s$/,''),id);
      }
      bulkSel.selected.clear();bulkSel.active=false;
-     closeModal();toast(`${ids.length} Item${ids.length===1?'':'s'} Deleted`,'trash-2');
+     closeModal();
+     if(failed)toast(`${deleted} Deleted, ${failed} Failed`,'alert-triangle');
+     else toast(`${deleted} Item${deleted===1?'':'s'} Deleted`,'trash-2');
      renderTab(tab);icons();
     });
    }}],0,520);
  }
  else if(act==='bulk-fav'){
   const tab=state.view.tab;const ids=[...bulkSel.selected];
-  ids.forEach(id=>{const item=byTabId(tab,id);if(item){item.fav=!item.fav;Sync.push(tab,'update',item)}});
+  const target=!ids.every(id=>byTabId(tab,id)?.fav);
+  ids.forEach(id=>{const item=byTabId(tab,id);if(item){item.fav=target;Sync.push(tab,'update',item)}});
   bulkSel.selected.clear();bulkSel.active=false;
   toast(`${ids.length} Item${ids.length===1?'':'s'} Updated`,'heart');renderTab(tab);icons();
  }
@@ -450,12 +460,14 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
      const url=$('#gl-url',b)?.value?.trim();
      if(!chosen)return;
      $('#gl-fetch-go',f).disabled=true;$('#gl-fetch-go',f).innerHTML='<i data-lucide="loader"></i>Fetching...';icons(f);
+     let body;
      try{
-      const body={kind:'scene',mode:'scraper',scraper_id:chosen.id,title:item.title,url:url||'',gallery_count:glCount};
+      body={kind:'scene',mode:'scraper',scraper_id:chosen.id,title:item.title,url:url||'',gallery_count:glCount};
       const r=await fetch('/api/scrape',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       if(!r.ok)throw new Error('HTTP '+r.status);
       const raw=await r.json();
       const imgs=Array.isArray(raw?.gallery)?raw.gallery:[];
+      if(!modalSteps||modalSteps[0]!==s0)return;
       if(!imgs.length){toast('No Gallery Found','alert-triangle');$('#gl-fetch-go',f).disabled=false;$('#gl-fetch-go',f).innerHTML='Fetch<i data-lucide="images"></i>';icons(f);return}
       // Step 2: show preview
       modalSteps=[modalSteps[0],{title:`Gallery Preview (${imgs.length} Images)`,html:()=>`
@@ -622,23 +634,24 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    }
    if(!HAS_SUBTLE){toast('WebCrypto Is Unavailable In This Context','alert-triangle');return}
    if(settings.imgProt.hash&&settings.imgProt.salt){
-    try{
-     const oldKey=await deriveKey(cur.value,settings.imgProt.salt);
-     const salt=b2h(crypto.getRandomValues(new Uint8Array(16)));
-     const newKey=await deriveKey(np,salt);
-     for(const id in encStore){
-      try{
-       const rec=encStore[id];
-       const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:h2b(rec.iv)},oldKey,h2b(rec.data));
-       const iv=crypto.getRandomValues(new Uint8Array(12));
-       const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},newKey,pt));
-       encStore[id]={iv:b2h(iv),data:b2h(ct),t:rec.t};
-      }catch(e2){}
-     }
-     saveEncStore();
-     settings.imgProt.salt=salt;
-     encKey=newKey;
-    }catch(e3){}
+    const oldKey=await deriveKey(cur.value,settings.imgProt.salt);
+    const salt=b2h(crypto.getRandomValues(new Uint8Array(16)));
+    const newKey=await deriveKey(np,salt);
+    const reEnc={};let failed=0;
+    for(const id in encStore){
+     try{
+      const rec=encStore[id];
+      const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:h2b(rec.iv)},oldKey,h2b(rec.data));
+      const iv=crypto.getRandomValues(new Uint8Array(12));
+      const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},newKey,pt));
+      reEnc[id]={iv:b2h(iv),data:b2h(ct),t:rec.t};
+     }catch(e2){failed++}
+    }
+    if(failed){toast(`${failed} Image${failed===1?'':'s'} Could Not Be Re-encrypted - Passphrase Unchanged`,'alert-triangle');return}
+    Object.assign(encStore,reEnc);
+    saveEncStore();
+    settings.imgProt.salt=salt;
+    encKey=newKey;
    }else{
     settings.imgProt.salt=b2h(crypto.getRandomValues(new Uint8Array(16)));
     encKey=await deriveKey(np,settings.imgProt.salt);
@@ -648,7 +661,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    renderSettings();icons();
    hydrateEncImages(document);
    toast('Passphrase Saved','key-round');
-  })();
+  })().catch(e=>toast('Passphrase Save Failed: '+e.message,'alert-triangle'));
  }
  else if(act==='sh-save'){
   const plats=[];
@@ -814,7 +827,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   const card=a.closest('.impcard');
   const body={
    path:card.dataset.path,kind:card.dataset.kind,
-   title:card.querySelector('.imp-title').value.trim()||card.dataset.guesstitle,
+   title:card.querySelector('.imp-title')?.value.trim()||card.dataset.guesstitle,
    year:parseInt(card.querySelector('.imp-year')?.value)||null,
    date:card.querySelector('.imp-date')?.value||null,
    duration_min:parseInt(card.querySelector('.imp-dur')?.value)||0,
@@ -826,7 +839,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   fetch('/api/scan/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
    .then(r=>{if(!r.ok)return r.json().then(j=>{throw new Error(j.detail||'Import Failed')});return r.json()})
    .then(j=>{
-    const rec=j.record;
+    const rec=j?.record;if(!rec)throw new Error('Unexpected Server Response');
     const local={
      id:rec.id,title:rec.title,fav:!!rec.fav,
      studioId:rec.studio_id||'',durationMin:rec.duration_min||0,
@@ -867,11 +880,11 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
     director:card.querySelector('.imp-dir')?.value.trim()||'',
     fav:card.querySelector('.imp-fav')?.checked||false
    };
-   if(!body.title){failed++;return Promise.resolve()}
+   if(!body.title){failed++;return importOne(cards.shift())}
    return fetch('/api/scan/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
     .then(r=>{if(!r.ok)throw new Error();return r.json()})
     .then(j=>{
-     const rec=j.record;
+     const rec=j?.record;if(!rec)throw new Error('Unexpected Server Response');
      const local={
       id:rec.id,title:rec.title,fav:!!rec.fav,
       studioId:rec.studio_id||'',durationMin:rec.duration_min||0,
@@ -915,7 +928,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
       ${s.groups.map(g=>`<div style="margin-bottom:12px">
        ${g.map(rid=>{const kind=kmap[s.kind];const it=byId(kind,rid);if(!it)return '';
         const src=kind==='movie'?it.posterF:kind==='scene'?((it.covers||[])[0]||''):kind==='performer'?it.photo:img('dup-'+kind+it.id,80,80);
-        return `<div class="res" data-action="open" data-kind="${kind}" data-id="${it.id}"><img class="${kind==='scene'?'w':''}" src="${src}" alt=""><div><b>${esc(it.title||it.name)}</b><div class="mono">${kindLabel(kind)}</div></div><i data-lucide="arrow-up-right"></i></div>`}).join('')}
+        return `<div class="res" data-action="open" data-kind="${kind}" data-id="${it.id}"><img class="${kind==='scene'?'w':''}" src="${esc(src)}" alt=""><div><b>${esc(it.title||it.name)}</b><div class="mono">${kindLabel(kind)}</div></div><i data-lucide="arrow-up-right"></i></div>`}).join('')}
       </div>`).join('')}</div>`).join('');
      openModal([{title:'Duplicate Check',html:()=>secs||`<div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:34px 0"><i data-lucide="badge-check" style="width:30px;height:30px;color:var(--accent)"></i><span class="cmsg">No Duplicates Found.</span></div>`,
       footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`}],0,620);
@@ -943,7 +956,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    ${sections.map(s=>`<div style="margin-bottom:18px"><div class="flab">${s.label} - ${s.groups.reduce((n,g)=>n+g.length,0)} Items</div>
     ${s.groups.map(g=>`<div style="margin-bottom:12px">
      ${g.map(x=>{const it=byId(x.kind,x.id);const src=x.kind==='movie'?it.posterF:x.kind==='scene'?((it.covers||[])[0]||''):x.kind==='performer'?it.photo:img('dup-'+x.kind+it.id,80,80);
-      return `<div class="res" data-action="open" data-kind="${x.kind}" data-id="${x.id}"><img class="${x.kind==='scene'?'w':''}" src="${src}" alt=""><div><b>${esc(x.t)}</b><div class="mono">${kindLabel(x.kind)}${x.y?' · '+esc(String(x.y)):''}</div></div><i data-lucide="arrow-up-right"></i></div>`}).join('')}
+      return `<div class="res" data-action="open" data-kind="${x.kind}" data-id="${x.id}"><img class="${x.kind==='scene'?'w':''}" src="${esc(src)}" alt=""><div><b>${esc(x.t)}</b><div class="mono">${kindLabel(x.kind)}${x.y?' · '+esc(String(x.y)):''}</div></div><i data-lucide="arrow-up-right"></i></div>`}).join('')}
     </div>`).join('')}</div>`).join('')}`
    :`<div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:34px 0"><i data-lucide="badge-check" style="width:30px;height:30px;color:var(--accent)"></i><span class="cmsg">No Duplicates Found.</span></div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`}],0,620);

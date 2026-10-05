@@ -20,6 +20,29 @@ class RangeNotSatisfiable(Exception):
     """Requested byte range lies outside the file (HTTP 416)."""
 
 
+class PathNotAllowed(Exception):
+    """Client-supplied path falls outside the configured scan folders."""
+
+
+def safe_path(path) -> str:
+    """Canonicalize a client-supplied path and confine it to the scan folders.
+
+    Shared fail-closed invariant for everything that touches real files
+    (delete, media streaming, scan/import): the resolved path must live inside
+    one of settings.dirs. With no folders configured nothing is allowed, and
+    symlinks that resolve outside the folders are rejected via realpath."""
+    if not isinstance(path, str) or not path:
+        raise PathNotAllowed("invalid path")
+    roots = [os.path.realpath(r) for r in (db.get_settings().get("dirs") or [])
+             if isinstance(r, str) and r]
+    if not roots:
+        raise PathNotAllowed("no scan folders are configured — refusing path access")
+    real = os.path.realpath(path)
+    if not any(real == r or real.startswith(r + os.sep) for r in roots):
+        raise PathNotAllowed("path is outside the configured scan folders")
+    return real
+
+
 def _table(kind: str) -> str | None:
     return {"movie": "movies", "scene": "scenes"}.get(kind)
 
@@ -30,7 +53,14 @@ def get_path(kind: str, rid: str) -> str | None:
         return None
     row = db.one(f"SELECT file_path FROM {t} WHERE id=?", (rid,))
     p = row["file_path"] if row else None
-    return p if p and os.path.isfile(p) else None
+    if not p:
+        return None
+    # DB file_path is client-writable through the CRUD API — confine it.
+    try:
+        real = safe_path(p)
+    except PathNotAllowed:
+        return None
+    return real if os.path.isfile(real) else None
 
 
 def mime_for(path: str) -> str:

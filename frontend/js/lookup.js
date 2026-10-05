@@ -1,8 +1,8 @@
 "use strict";
 /* ===== MODAL ===== */
 let modalSteps=null,modalIdx=0;
-function closeModal(){modalSteps=null;$('#modal-root').innerHTML=''}
-function openModal(steps,startIdx=0,mw){modalSteps=steps;modalIdx=startIdx;renderModal(mw)}
+function closeModal(){const s=modalSteps&&modalSteps[modalIdx];modalSteps=null;$('#modal-root').innerHTML='';s&&s.onClose&&s.onClose()}
+function openModal(steps,startIdx=0,mw){const p=modalSteps&&modalSteps[modalIdx];modalSteps=steps;modalIdx=startIdx;p&&p.onClose&&p.onClose();renderModal(mw)}
 function renderModal(mw){
  if(!modalSteps||!modalSteps[modalIdx])return closeModal();
  const s=modalSteps[modalIdx];
@@ -67,8 +67,8 @@ function buildCompareStep(kind,m,ctx,sourceLabel){
    <figure class="pv"><img class="${kind!=='movie'?'w':''}" src="${esc(posters.a||'')}" alt="" onload="this.naturalWidth>this.naturalHeight&&(this.style.objectPosition='97% center')"><figcaption>${posters.la}</figcaption></figure>
    ${posters.b?`<figure class="pv"><img class="${kind!=='movie'?'w':''}" src="${esc(posters.b||'')}" alt=""><figcaption>${posters.lb}</figcaption></figure>`:''}
   </div>
-  <div class="previnfo"><h3>${esc(m.title)}</h3><div class="sub2 mono">${esc(m.studioName||'')} · ${kind==='movie'?m.year:kind==='scene'?fmtDate(m.date):esc(m.ethnicity)}${sourceLabel?' · '+esc(sourceLabel):''}</div>
-   ${kind!=='performer'?`<div class="kv"><span class="kl">Director</span><span class="kvs">${esc(m.director)}</span></div><div class="kv"><span class="kl">Duration</span><span class="kvs">${fmtDur(m.durationMin)}${m.scenes?` · ${m.scenes} Scene${m.scenes===1?'':'s'}`:''}</span></div>`:`<div class="kv"><span class="kl">Born</span><span class="kvs">${fmtDate(m.birth)}</span></div><div class="kv"><span class="kl">Appearance</span><span class="kvs">${esc(m.hair)} Hair · ${esc(m.eyes)} Eyes · ${ftIn(m.height)}</span></div>`}
+  <div class="previnfo"><h3>${esc(m.title)}</h3><div class="sub2 mono">${esc(m.studioName||'')} · ${kind==='movie'?esc(m.year):kind==='scene'?esc(fmtDate(m.date)):esc(m.ethnicity)}${sourceLabel?' · '+esc(sourceLabel):''}</div>
+   ${kind!=='performer'?`<div class="kv"><span class="kl">Director</span><span class="kvs">${esc(m.director)}</span></div><div class="kv"><span class="kl">Duration</span><span class="kvs">${esc(fmtDur(m.durationMin))}${m.scenes?` · ${esc(m.scenes)} Scene${m.scenes===1?'':'s'}`:''}</span></div>`:`<div class="kv"><span class="kl">Born</span><span class="kvs">${esc(fmtDate(m.birth))}</span></div><div class="kv"><span class="kl">Appearance</span><span class="kvs">${esc(m.hair)} Hair · ${esc(m.eyes)} Eyes · ${ftIn(m.height)}</span></div>`}
   </div></div>
   ${!isPostersOnly?`
   <div class="cmphd"><span></span><span>Field</span><span>Current</span><span>Found - Select To Apply</span></div>
@@ -128,7 +128,7 @@ function openFetchModal(kind,ctx){
  const sSearch={title:'Searching...',html:()=>`<div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:40px 0"><i data-lucide="loader-2" class="spin" style="width:30px;height:30px;color:var(--accent)"></i><span class="mono" style="font-size:10px;letter-spacing:.16em;color:var(--muted)">Querying ${esc(chosen?chosen.s.name:'')}...</span></div>`,footer:()=>'<span class="push"></span>'};
  const results=()=>{const n=1+hashStr(ctx.title)%2;return [0,1,2].slice(0,n+1).map(i=>mockResult(kind,ctx.title,i,chosen?chosen.s.name:'',ctx.gender))};
  const sResults={title:'Results',html:()=>`<div class="cmsg" style="margin-bottom:14px">${results().length} Matches For <b>"${esc(ctx.title)}"</b>${chosen?' On '+esc(chosen.s.name):''}:</div>${results().map((r,i)=>`
-   <div class="res" data-res="${i}"><img class="${kind!=='movie'?'w':''}" src="${esc(kind==='performer'?(r.photo||''):kind==='movie'?(r.posterF||''):((r.covers||[])[0]||''))}" alt="" onload="this.naturalWidth>this.naturalHeight&&(this.style.objectPosition='97% center')"><div><b>${esc(r.title)}</b><div class="mono">${kind==='performer'?(esc(r.ethnicity)+' · '+ftIn(r.height)):esc(r.studioName)+' · '+(kind==='movie'?r.year:fmtDate(r.date))}</div></div><i data-lucide="chevron-right"></i></div>`).join('')}`,
+   <div class="res" data-res="${i}"><img class="${kind!=='movie'?'w':''}" src="${esc(kind==='performer'?(r.photo||''):kind==='movie'?(r.posterF||''):((r.covers||[])[0]||''))}" alt="" onload="this.naturalWidth>this.naturalHeight&&(this.style.objectPosition='97% center')"><div><b>${esc(r.title)}</b><div class="mono">${kind==='performer'?(esc(r.ethnicity)+' · '+ftIn(r.height)):esc(r.studioName)+' · '+(kind==='movie'?esc(r.year):esc(fmtDate(r.date)))}</div></div><i data-lucide="chevron-right"></i></div>`).join('')}`,
   footer:()=>`<span class="push"></span>`,
   mount(b){$$('.res',b).forEach(r=>r.addEventListener('click',()=>{
    const m=results()[+r.dataset.res];

@@ -37,31 +37,35 @@ def ensure_dirs() -> None:
 
 
 _conn: sqlite3.Connection | None = None
-_lock = threading.Lock()
+# RLock: query/one/execute hold the lock and then call connect(), which also
+# takes it. A plain Lock deadlocks the thread (and then the whole server)
+# whenever _conn is None — e.g. right after backup.restore_zip calls close().
+_lock = threading.RLock()
 
 
 def connect() -> sqlite3.Connection:
     global _conn
-    if _conn is None:
-        with _lock:
-            if _conn is None:
-                ensure_dirs()
-                _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-                _conn.row_factory = sqlite3.Row
-                _conn.execute("PRAGMA journal_mode=WAL")
-                _migrate()
-    return _conn
+    # Reentrant: safe to call while already holding _lock (see above).
+    with _lock:
+        if _conn is None:
+            ensure_dirs()
+            _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+            _conn.row_factory = sqlite3.Row
+            _conn.execute("PRAGMA journal_mode=WAL")
+            _migrate()
+        return _conn
 
 
 def close() -> None:
     """Close the shared connection (used by backup/restore)."""
     global _conn
-    if _conn is not None:
-        try:
-            _conn.close()
-        except Exception:
-            pass
-        _conn = None
+    with _lock:
+        if _conn is not None:
+            try:
+                _conn.close()
+            except Exception:
+                pass
+            _conn = None
 
 
 SCHEMA = """
@@ -164,9 +168,14 @@ def get_settings() -> dict:
     row = one("SELECT value FROM settings WHERE key='app'")
     if row:
         try:
-            return json.loads(row["value"])
-        except Exception:
-            pass
+            s = json.loads(row["value"])
+        except Exception as e:
+            # Never silently fall back to {}: the next save_settings would
+            # persist that empty base and wipe every stored setting.
+            raise ValueError(f"settings row is corrupt (unparseable JSON): {e}") from e
+        if not isinstance(s, dict):
+            raise ValueError("settings row is corrupt (not a JSON object)")
+        return s
     return {}
 
 
@@ -182,19 +191,25 @@ def get_scraper_sites() -> dict:
 
 
 def add_scraper_site(kind: str, scraper_id: str, domain: str) -> None:
-    s = get_settings()
-    s.setdefault("scraperSites", {})
-    s["scraperSites"].setdefault(kind, [])
-    s["scraperSites"][kind].append({"scraper_id": scraper_id, "domain": domain})
-    save_settings(s)
+    # Hold _lock across the read-modify-save so concurrent updates cannot
+    # interleave and silently lose one of the writes (RLock: reentrant below).
+    with _lock:
+        s = get_settings()
+        s.setdefault("scraperSites", {})
+        s["scraperSites"].setdefault(kind, [])
+        s["scraperSites"][kind].append({"scraper_id": scraper_id, "domain": domain})
+        save_settings(s)
 
 
 def del_scraper_site(kind: str, idx: int) -> None:
-    s = get_settings()
-    if "scraperSites" in s and kind in s["scraperSites"]:
-        s["scraperSites"][kind].pop(idx)
-        if not s["scraperSites"][kind]:
-            del s["scraperSites"][kind]
-        if not s["scraperSites"]:
-            del s["scraperSites"]
-    save_settings(s)
+    with _lock:
+        s = get_settings()
+        if "scraperSites" in s and kind in s["scraperSites"]:
+            if not 0 <= idx < len(s["scraperSites"][kind]):
+                raise ValueError(f"scraper site index {idx} out of range")
+            s["scraperSites"][kind].pop(idx)
+            if not s["scraperSites"][kind]:
+                del s["scraperSites"][kind]
+            if not s["scraperSites"]:
+                del s["scraperSites"]
+        save_settings(s)

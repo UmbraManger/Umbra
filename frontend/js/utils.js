@@ -2,7 +2,7 @@
 /* ===== UTILS ===== */
 const $=(s,c=document)=>c.querySelector(s);
 const $$=(s,c=document)=>[...c.querySelectorAll(s)];
-const esc=s=>String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const img=(seed,w,h)=>`https://picsum.photos/seed/${encodeURIComponent(seed)}/${w}/${h}.jpg`;
 const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
 let _seq=0;const uid=p=>p+'-'+(++_seq)+'-'+Math.random().toString(36).slice(2,5);
@@ -89,6 +89,7 @@ async function ensureKey(){
  if(!settings.imgProt||!settings.imgProt.on||!settings.imgProt.hash)return null;
  if(encPending)return encPending;
  encPending=new Promise(res=>{
+  let settled=false;
   openModal([{title:'Image Protection - Passphrase',html:()=>`
    <div class="cmsg" style="margin-bottom:12px">Enter The Image Protection Passphrase To View Protected Images.</div>
    <input class="field" id="ip-pass" type="password" placeholder="Passphrase">`,
@@ -99,11 +100,12 @@ async function ensureKey(){
      const chk=await sha256(inp.value);
      if(chk!==settings.imgProt.hash){inp.classList.add('err');toast('Wrong Passphrase','alert-triangle');return}
      encKey=await deriveKey(inp.value,settings.imgProt.salt);
-     closeModal();res(encKey);hydrateEncImages(document);
+     settled=true;closeModal();res(encKey);hydrateEncImages(document);
     };
     $('#ip-ok',f).addEventListener('click',go);
     inp.addEventListener('keydown',e=>{if(e.key==='Enter')go()});
-   }}],0,460);
+   },
+   onClose(){if(!settled){settled=true;res(null)}}}],0,460);
  }).finally(()=>{encPending=null});
  return encPending;
 }
@@ -115,7 +117,7 @@ async function encryptLocalFile(buf,mime){
  return {iv:b2h(iv),data:b2h(ct),t:mime||'image/jpeg'};
 }
 async function encToObjectURL(id){
- const rec=encStore[id];if(!rec)return null;
+ const rec=encStore[String(id).replace(/^enc:\/\//,'')];if(!rec)return null;
  const k=await ensureKey();if(!k)return null;
  try{
   const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:h2b(rec.iv)},k,h2b(rec.data));
@@ -134,11 +136,11 @@ const hydrating=new Set();
 function hydrateEncImages(root){
  const imgs=$$('img[src^="enc://"]',root);
  if(!imgs.length)return;
- [...new Set(imgs.map(im=>im.getAttribute('src').slice(5)))].forEach(id=>{
+ [...new Set(imgs.map(im=>im.getAttribute('src').slice(6)))].forEach(id=>{
   if(hydrating.has(id))return;
   hydrating.add(id);
   encToObjectURL(id).then(url=>{
-   $$(`img[src="enc://${id}"]`,document).forEach(im=>{
+   $$(`img[src="enc://${CSS.escape(id)}"]`,document).forEach(im=>{
     if(url)im.src=url;else im.removeAttribute('src');
    });
   }).finally(()=>setTimeout(()=>hydrating.delete(id),50));

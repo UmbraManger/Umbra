@@ -346,16 +346,21 @@ function detailToolbarClick(e){
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn danger" id="dbulk-del-ok"><i data-lucide="trash-2"></i>Delete ${ids.length}</button>`,
    mount(bl,f){
     $('#dbulk-del-ok',f)?.addEventListener('click',async()=>{
+     let ok=0;
      for(const id of ids){
       const rec=dFindItem(id);if(!rec)continue;
-      if(Sync.on){try{await fetch(`/api/${rec.kind}/${id}`,{method:'DELETE'})}catch(e){}}
+      if(Sync.on){try{
+       const r=await fetch(`/api/${rec.kind}/${id}`,{method:'DELETE'});
+       if(!r.ok)throw new Error('HTTP '+r.status);
+      }catch(e){toast('Server Delete Failed - '+(rec.item.title||rec.item.name||id),'alert-triangle');continue}}
+      ok++;
       rec.arr.splice(rec.i,1);
       if(rec.kind==='movies')DB.scenes.forEach(s=>{if(s.movieId===id)s.movieId=null});
       Positions.clear(rec.kind.replace(/s$/,''),id);
       ['movie','scene'].forEach(k=>{const r=detailUI.raw[k];const j=r.indexOf(rec.item);if(j>-1)r.splice(j,1)});
      }
      bulkSel.selected.clear();bulkSel.active=false;
-     closeModal();toast(`${ids.length} Item${ids.length===1?'':'s'} Deleted`,'trash-2');
+     closeModal();if(ok)toast(`${ok} Item${ok===1?'':'s'} Deleted`,'trash-2');
      detailRefreshSections(true);detailRefreshToolbar();
     });
    }}],0,520);
@@ -419,7 +424,7 @@ function renderDetail(kind,id){
   }
  }
  else if(kind==='performer'){
-  mediaHTML=`<div class="pperf"><img src="${item.photo}" alt=""></div>`;
+  mediaHTML=`<div class="pperf"><img src="${esc(item.photo||'')}" alt=""></div>`;
   infoHTML=`<div class="dinfo"><h1>${esc(item.name)}</h1>
    <div class="dmeta mono">${item.gender==='m'?'Male':'Female'}${item.aliases?' · AKA '+esc(item.aliases):''}</div>
    ${infoGrid('performer',item)}
@@ -507,9 +512,12 @@ function renderDetail(kind,id){
  $$('.gallery-item',$('#main')).forEach(el=>el.addEventListener('click',()=>{
   const allUrls=ensureArr(item.gallery);
   let curIdx=+el.dataset.idx||0;
+  const lbCache=new Map();
   function srcFor(u){
    const s=String(u||'');
-   return s.startsWith('enc://')?encToObjectURL(s.slice(5)).then(o=>o||''):Promise.resolve(s);
+   if(!s.startsWith('enc://'))return Promise.resolve(s);
+   if(!lbCache.has(s))lbCache.set(s,encToObjectURL(s).then(o=>o||''));
+   return lbCache.get(s);
   }
   function paint(bl,f){
    const img=$('#gl-img',bl);
@@ -524,6 +532,7 @@ function renderDetail(kind,id){
   openModal([{title:'Gallery '+(curIdx+1)+'/'+allUrls.length,
    html:()=>`<div style="text-align:center"><img id="gl-img" src="" alt="" style="max-width:100%;max-height:80vh;border-radius:8px;opacity:.35;transition:opacity .15s"></div>`,
    footer:()=>`<button class="btn" data-action="gl-prev"><i data-lucide="chevron-left"></i></button><span class="mono" id="gl-count" style="font-size:12px"></span><button class="btn" data-action="gl-next"><i data-lucide="chevron-right"></i></button><span class="push"></span>`,
+   onClose(){lbCache.forEach(p=>p.then(u=>{u&&URL.revokeObjectURL(u)}))},
    mount(bl,f){
     icons(bl);icons(f);
     const img=$('#gl-img',bl);

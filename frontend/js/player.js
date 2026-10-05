@@ -14,7 +14,7 @@ function mediaInfo(item,kind){
 }
 function rawImg(src){return new Promise(res=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>res(null);i.src=src})}
 function loadImg(src){
- if(String(src).startsWith('enc://'))return encToObjectURL(String(src).slice(5)).then(u=>u?rawImg(u):null);
+ if(String(src).startsWith('enc://'))return encToObjectURL(src).then(u=>u?rawImg(u):null);
  return rawImg(src);
 }
 function playerSrcs(item,kind){

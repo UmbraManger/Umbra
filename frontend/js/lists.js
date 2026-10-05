@@ -111,7 +111,7 @@ function filterPopHTML(tab){
   return {main,overflow};
  };
  const sites=chipBlock(siteList,'site',f.studios);
- const perfChip=item=>`<button type="button" class="peep ${f.performers.has(item.id)?'on':''}" data-fk="perf" data-fv="${item.id}">${item.photo?`<img src="${item.photo}" alt="">`:''}${esc(item.n)}</button>`;
+ const perfChip=item=>`<button type="button" class="peep ${f.performers.has(item.id)?'on':''}" data-fk="perf" data-fv="${esc(item.id)}">${item.photo?`<img src="${esc(item.photo)}" alt="">`:''}${esc(item.n)}</button>`;
  const perfShown=perfList.slice(0,lim),perfHidden=perfList.slice(lim);
  const perfMoreBtn=perfHidden.length?`<button type="button" class="chip" data-role="more" data-more-label="+${perfHidden.length} More">+${perfHidden.length} More</button>`:'';
  const perfMain=perfShown.map(perfChip).join('')+perfMoreBtn;

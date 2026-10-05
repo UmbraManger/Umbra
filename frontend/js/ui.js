@@ -21,7 +21,7 @@ function renderAbout(){
    </div>
    <div class="counts" style="margin-bottom:20px">${counts.map(c=>`<div class="cnt"><div class="mono">${c[0]}</div><div class="cv">${c[1]}</div></div>`).join('')}</div>
    <div style="margin-bottom:16px"><div class="flab">Sync</div><div style="font-size:13px;color:var(--muted)">${syncStatus}</div></div>
-   <div style="margin-bottom:16px"><div class="flab">Theme</div><div style="font-size:13px;color:var(--muted)">${settings.theme==='dark'?'Dark':'Light'}${settings.adv?.accent?' · Accent: '+settings.adv.accent:''}</div></div>
+   <div style="margin-bottom:16px"><div class="flab">Theme</div><div style="font-size:13px;color:var(--muted)">${settings.theme==='dark'?'Dark':'Light'}${settings.adv?.accent?' · Accent: '+esc(settings.adv.accent):''}</div></div>
    <div style="margin-bottom:16px"><div class="flab">Image Protection</div><div style="font-size:13px;color:var(--muted)">${settings.imgProt?.on?'Encrypted':'Off'}</div></div>
    <div class="flab">Data</div>
    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
@@ -249,9 +249,7 @@ function bindSlot(rootId,ratio,initial){
      encStore[id]=enc;saveEncStore();
      setVal('enc://'+id);
      toast('Image Stored Encrypted','shield');
-    }else{
-     const r2=new FileReader();r2.onload=()=>setVal(r2.result);r2.readAsDataURL(f);
-    }
+    }else toast('Image Not Stored - Image Protection Passphrase Required','alert-triangle');
    };
    r.readAsArrayBuffer(f);
   }else{

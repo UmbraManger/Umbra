@@ -17,4 +17,6 @@ dist/
 *.egg-info/
 .pytest_cache/
 New Text Document.txt
-/scrapers/
+/scrapers/__pycache__/
+/scrapers/meta.json
+

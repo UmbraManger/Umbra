@@ -1,7 +1,7 @@
 """Obscura API — all routes under /api. Frontend is served at /."""
-import os, sys, json, re, time, secrets, hmac, logging
+import os, sys, json, re, time, secrets, hmac, logging, threading
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Body, Request
 from fastapi.responses import Response, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -27,22 +27,58 @@ app = FastAPI(title="Obscura", version="0.9")
 # ---- security: per-run token + Host/Origin enforcement ----
 # Everything under /api/ requires the per-run token (header X-Obscura-Token or
 # ?t=). The only exception is a plain GET of /api/images/* and /api/media/*
-# (img/video tags cannot set headers) — those additionally require a
-# same-origin/no Sec-Fetch-Site. Host must be loopback and Origin, when sent,
-# must match it: together these block DNS rebinding and drive-by calls made by
-# other web pages open in the browser. CORS is deliberately NOT enabled — the
-# frontend is same-origin.
+# (img/video tags cannot set headers): those are authorized with a short-lived
+# signed cookie handed out when the real token is presented — client-controlled
+# headers (Sec-Fetch-Site) are NOT trusted. Host must be loopback and Origin,
+# when sent, must match it: together these block DNS rebinding and drive-by
+# calls made by other web pages open in the browser. CORS is deliberately NOT
+# enabled — the frontend is same-origin.
 API_TOKEN = secrets.token_hex(32)
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _ASSET_PREFIXES = ("/api/images/", "/api/media/")
 _TOKEN_HDR = "x-obscura-token"
+_ASSET_COOKIE = "obscura_asset"
+_ASSET_COOKIE_TTL = 8 * 3600  # seconds — short-lived, refreshed on every token-authed call
+
+
+def _asset_cookie_val() -> str:
+    """Signed, expiring cookie value for tag-driven asset GETs."""
+    exp = int(time.time()) + _ASSET_COOKIE_TTL
+    sig = hmac.new(API_TOKEN.encode(), f"asset:{exp}".encode(), "sha256").hexdigest()
+    return f"{exp}.{sig}"
+
+
+def _asset_cookie_ok(val) -> bool:
+    try:
+        exp_s, sig = str(val or "").split(".", 1)
+        exp = int(exp_s)
+    except ValueError:
+        return False
+    if exp < time.time():
+        return False
+    return hmac.compare_digest(
+        sig, hmac.new(API_TOKEN.encode(), f"asset:{exp}".encode(), "sha256").hexdigest())
+
+
+def _grant_asset_cookie(resp):
+    """Token was presented: hand out the cookie that <img>/<video>/… GETs use
+    instead of trusting client-controlled headers (Sec-Fetch-Site)."""
+    resp.set_cookie(_ASSET_COOKIE, _asset_cookie_val(), max_age=_ASSET_COOKIE_TTL,
+                    path="/", httponly=True, samesite="lax")
+    return resp
 
 
 class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         path = request.url.path
         if not path.startswith("/api/"):
-            return await call_next(request)
+            resp = await call_next(request)
+            t = request.query_params.get("t") or ""
+            if t and hmac.compare_digest(str(t), API_TOKEN):
+                # App shell loaded with ?t= → grant the asset cookie up front so
+                # the very first <img>/<video> loads are already authorized.
+                _grant_asset_cookie(resp)
+            return resp
         host_hdr = (request.headers.get("host") or "").lower()
         if host_hdr.split(":")[0].strip("[]") not in _LOCAL_HOSTS:
             return JSONResponse({"detail": "forbidden"}, status_code=403)
@@ -51,10 +87,12 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             return JSONResponse({"detail": "forbidden"}, status_code=403)
         sent = request.headers.get(_TOKEN_HDR) or request.query_params.get("t") or ""
         if sent and hmac.compare_digest(str(sent), API_TOKEN):
+            return _grant_asset_cookie(await call_next(request))
+        if request.method == "GET" and path.startswith(_ASSET_PREFIXES) \
+                and _asset_cookie_ok(request.cookies.get(_ASSET_COOKIE)):
+            # tag-driven GET (img/video/track): authorized by the signed cookie
+            # handed out at token time — token auth stays the enforced default
             return await call_next(request)
-        if request.method == "GET" and path.startswith(_ASSET_PREFIXES):
-            if request.headers.get("sec-fetch-site", "") in ("", "same-origin", "none"):
-                return await call_next(request)
         return JSONResponse({"detail": "missing or invalid token"}, status_code=403)
 
 
@@ -175,14 +213,16 @@ def _register_crud(kind):
             row = db.one(f"SELECT file_path FROM {TABLES[kind]} WHERE id=?", (rid,))
             if row: path = row["file_path"]
         # Validate the destructive part BEFORE touching any row.
+        real = None
         if file and path:
             if confirm != "DELETE":
                 raise HTTPException(400, 'refusing to delete the video file without confirm="DELETE"')
-            real = os.path.realpath(path)
-            roots = [os.path.realpath(r) for r in (db.get_settings().get("dirs") or [])
-                     if isinstance(r, str) and r]
-            if roots and not any(real == r or real.startswith(r + os.sep) for r in roots):
-                raise HTTPException(403, "file is outside the configured scan folders — refusing to delete it")
+            try:
+                # mandatory, fail-closed containment: also refuses when no scan
+                # folders are configured at all (was: check silently skipped)
+                real = media_engine.safe_path(path)
+            except media_engine.PathNotAllowed as e:
+                raise HTTPException(403, str(e))
         if kind in ("movies", "scenes"):
             img_cols = {"movies": ["poster_f", "poster_b"],
                         "scenes": ["cover_a", "cover_b"]}.get(kind, [])
@@ -196,9 +236,9 @@ def _register_crud(kind):
         db.execute("DELETE FROM positions WHERE media_id=?", (kind[:-1] + ":" + rid,))
         db.execute(f"DELETE FROM {TABLES[kind]} WHERE id=?", (rid,))
         file_removed = False
-        if file and path and os.path.isfile(path):
+        if file and real and os.path.isfile(real):
             try:
-                os.remove(path); file_removed = True
+                os.remove(real); file_removed = True  # delete the resolved path (no symlink TOCTOU)
             except OSError: pass
         return {"ok": True, "file_removed": file_removed}
     app.post(f"/api/{kind}")(create)
@@ -258,6 +298,15 @@ def img_status(): return crypto.status()
 def img_pass(b: PassBody):
     try: return crypto.set_passphrase(b.passphrase, b.current)
     except ValueError as e: raise HTTPException(400, str(e))
+    except Exception as e:
+        # Non-validation failures (e.g. IO errors during the phase-2 re-key)
+        # must surface with detail instead of a bare 500 or a silent success.
+        # NOTE: full atomic rollback of a partial re-key needs crypto.py changes
+        # (see FIXES-D-server-media.md) — originals are kept in .rekey-backup.
+        log.exception("[images] passphrase change failed")
+        raise HTTPException(500, f"passphrase change failed — if blobs were "
+                                 f"mid-rewrite, originals are kept in "
+                                 f"data/encrypted/.rekey-backup: {e}")
 
 @app.post("/api/images/enabled")
 def img_enabled(body: dict = Body(...)):
@@ -369,14 +418,25 @@ def dialog_file():
         return {"path": ""}
 
 # ---- scanner ----
+def _safe_dirs(dirs) -> list:
+    """Confine requested scan folders to settings.dirs (fail closed when empty)."""
+    out = []
+    for d in dirs or []:
+        try:
+            out.append(media_engine.safe_path(d))
+        except media_engine.PathNotAllowed as e:
+            raise HTTPException(403, str(e))
+    return out
+
+
 @app.post("/api/scan")
 def scan(body: dict = Body(...)):
-    files = scanner.walk(body.get("dirs", []))
+    files = scanner.walk(_safe_dirs(body.get("dirs", [])))
     return {"found": files, "count": len(files)}
 
 @app.post("/api/scan/candidates")
 def scan_candidates(body: dict = Body(...)):
-    files = scanner.walk(body.get("dirs", []))
+    files = scanner.walk(_safe_dirs(body.get("dirs", [])))
     for f in files:
         f["imported"] = scanner.is_imported(f["path"])
         f["guess_title"] = scanner.guess_title(f["path"])
@@ -405,8 +465,12 @@ class ImportBody(BaseModel):
 @app.post("/api/scan/import")
 def scan_import(b: ImportBody):
     try:
+        path = media_engine.safe_path(b.path)
+    except media_engine.PathNotAllowed as e:
+        raise HTTPException(403, str(e))
+    try:
         rec = scanner.import_file(
-            b.path, b.kind, b.title, year=b.year, date=b.date,
+            path, b.kind, b.title, year=b.year, date=b.date,
             studio_id=b.studio_id, movie_id=b.movie_id,
             duration_min=b.duration_min, director=b.director, desc=b.desc,
             actor_ids=b.actor_ids, category_ids=b.category_ids, fav=b.fav)
@@ -426,11 +490,35 @@ def scan_undone(body: dict = Body(...)):
 @app.get("/api/scrapers")
 def scrapers_list(): return scraper_engine.list_all()
 
+_PY_MARKERS = re.compile(
+    r"(?m)^\s*(?:import\s|from\s+\S+\s+import\s|def\s|class\s|lambda\b)"
+    r"|__\w+__|\b(?:eval|exec|compile|open|getattr|setattr|globals|locals|vars|breakpoint)\s*\(")
+
+
+def _scraper_needs_confirm(content: bytes) -> bool:
+    """Decide "this is executable Python" from CONTENT, not the filename — an
+    extension-less upload (or a file literally named `py`) used to skip the
+    consent gate while the engine still executed it as Python. Fail closed:
+    anything that is not plainly declarative YAML/JSON data counts as Python."""
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    if _PY_MARKERS.search(text):
+        return True
+    try:
+        import yaml
+        data = yaml.safe_load(text)
+    except Exception:
+        return True
+    return not isinstance(data, (dict, list))
+
+
 @app.post("/api/scrapers/file")
 async def scraper_upload(file: UploadFile = File(...), kind: str = Form("movie"),
                          confirm: str = Form("")):
     content = await file.read()
-    if (file.filename or "").lower().endswith(".py") and \
+    if _scraper_needs_confirm(content) and \
             confirm != "I UNDERSTAND PYTHON SCRAPERS RUN AS LOCAL CODE":
         raise HTTPException(400, "Python scrapers execute as local code — send "
                                 'confirm="I UNDERSTAND PYTHON SCRAPERS RUN AS LOCAL CODE"')
@@ -513,6 +601,23 @@ def _store_response_image(r) -> str:
     return f"/api/images/{img_id}"
 
 
+def _fetch_image(url: str, get) -> "requests.Response":
+    """GET `url` via `get`, re-validating every redirect hop.
+
+    `requests` follows redirects by default, which let a hostile first hop 302
+    straight past _safe_image_url to loopback/LAN/cloud-metadata. Redirects are
+    disabled at the call sites and each Location is re-checked here (max 3 hops)."""
+    for _ in range(3):
+        r = get(url)
+        if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
+            url = urljoin(url, r.headers["location"])
+            if not _safe_image_url(url):
+                raise ValueError(f"redirect target blocked by SSRF guard: {url[:80]}")
+            continue
+        return r
+    raise ValueError("too many redirects")
+
+
 def _download_image(url: str) -> str:
     """Download image from URL, store locally, return /api/images/ path."""
     if not url or not url.startswith("http"):
@@ -534,7 +639,8 @@ def _download_image(url: str) -> str:
                 iafd_scraper = None
             if iafd_scraper is not None:
                 try:
-                    r = iafd_scraper.iafd_session.get(url, timeout=15)
+                    r = _fetch_image(url, lambda u: iafd_scraper.iafd_session.get(
+                        u, timeout=15, allow_redirects=False))
                     return _store_response_image(r)
                 except Exception as e:
                     log.warning("[download-image] iafd session failed: %s — %s", url[:80], e)
@@ -542,9 +648,12 @@ def _download_image(url: str) -> str:
         # Use cloudscraper for other Cloudflare-protected sites,
         # fall back to plain requests for others.
         try:
-            r = _cf_scraper.get(url, timeout=15, **extra)
+            r = _fetch_image(url, lambda u: _cf_scraper.get(
+                u, timeout=15, allow_redirects=False, **extra))
         except Exception:
-            r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0", **extra.get('headers', {})})
+            r = _fetch_image(url, lambda u: requests.get(
+                u, timeout=15, allow_redirects=False,
+                headers={"User-Agent": "Mozilla/5.0", **extra.get('headers', {})}))
         return _store_response_image(r)
     except Exception as e:
         log.warning("[download-image] failed: %s — %s", url[:80], e)
@@ -773,29 +882,38 @@ def titlecase_all():
                 db.execute(f"UPDATE {table} SET title=? WHERE id=?", (t2, r["id"])); n += 1
     return {"changed": n}
 
+# ---- maintenance lock: serializes wipe/restore against each other ----
+_MAINT_LOCK = threading.Lock()
+MAX_RESTORE_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB cap on restore uploads
+
 # ---- wipe ----
 @app.post("/api/wipe")
 def wipe_all(body: dict = Body(default={})):
     if (body or {}).get("confirm") != "DELETE MY LIBRARY":
         raise HTTPException(400, 'confirmation required: send {"confirm":"DELETE MY LIBRARY"}')
-    import shutil
-    # Clear all tables
-    for table in TABLES:
-        db.execute(f"DELETE FROM {table}")
-    db.execute("DELETE FROM positions")
-    db.execute("DELETE FROM settings")
-    # Remove encrypted images and scrapers
-    enc_dir = os.path.join(db.DATA_DIR, "encrypted")
-    scraper_dir = db.SCRAPER_DIR
-    for d in (enc_dir, scraper_dir):
-        if os.path.isdir(d):
-            shutil.rmtree(d, ignore_errors=True)
-            os.makedirs(d, exist_ok=True)
-    # Remove scan state and imgprot
-    for f in ("scanstate.json", "imgprot.json"):
-        p = os.path.join(db.DATA_DIR, f)
-        try: os.remove(p)
-        except OSError: pass
+    if not _MAINT_LOCK.acquire(blocking=False):
+        raise HTTPException(409, "another maintenance operation (wipe/restore) is already running — try again shortly")
+    try:
+        import shutil
+        # Clear all tables
+        for table in TABLES:
+            db.execute(f"DELETE FROM {table}")
+        db.execute("DELETE FROM positions")
+        db.execute("DELETE FROM settings")
+        # Remove encrypted images and scrapers
+        enc_dir = os.path.join(db.DATA_DIR, "encrypted")
+        scraper_dir = db.SCRAPER_DIR
+        for d in (enc_dir, scraper_dir):
+            if os.path.isdir(d):
+                shutil.rmtree(d, ignore_errors=True)
+                os.makedirs(d, exist_ok=True)
+        # Remove scan state and imgprot
+        for f in ("scanstate.json", "imgprot.json"):
+            p = os.path.join(db.DATA_DIR, f)
+            try: os.remove(p)
+            except OSError: pass
+    finally:
+        _MAINT_LOCK.release()
     return {"ok": True}
 
 # ---- backup / restore ----
@@ -810,10 +928,25 @@ def backup_export():
 async def backup_restore(file: UploadFile = File(...), confirm: str = Form("")):
     if confirm != "RESTORE":
         raise HTTPException(400, 'confirmation required: send form field confirm="RESTORE"')
-    data = await file.read()
-    try: n = backup_engine.restore_zip(data)
-    except ValueError as e: raise HTTPException(400, str(e))
-    except Exception as e: raise HTTPException(500, f"restore failed: {e}")
+    # stream the upload with a cap instead of an unbounded read()
+    chunks, total = [], 0
+    while True:
+        chunk = await file.read(1 << 20)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_RESTORE_BYTES:
+            raise HTTPException(413, "backup archive exceeds the 2 GB restore cap")
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    if not _MAINT_LOCK.acquire(blocking=False):
+        raise HTTPException(409, "another maintenance operation (wipe/restore) is already running — try again shortly")
+    try:
+        try: n = backup_engine.restore_zip(data)
+        except ValueError as e: raise HTTPException(400, str(e))
+        except Exception as e: raise HTTPException(500, f"restore failed: {e}")
+    finally:
+        _MAINT_LOCK.release()
     return {"ok": True, "entries": n}
 
 # ---- serve the frontend (mount LAST so /api routes win) ----
