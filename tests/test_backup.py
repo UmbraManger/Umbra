@@ -8,7 +8,7 @@ import backup
 import crypto
 import db
 import scrapers
-from .helpers import IsolatedCase, known_bug
+from .helpers import IsolatedCase
 
 PNG = b"\x89PNG\r\n\x1a\n" + bytes(range(200))
 
@@ -114,37 +114,34 @@ class KnownBugTests(BackupCase):
         files.update({k.replace("_", "."): v for k, v in replace.items()})
         return make_zip(files)
 
-    @known_bug
     def test_backup_database_copy_must_not_contain_the_ai_key(self):
-        """BUG (analysis #5, Phase 2): settings.json is scrubbed but obscura.db is
-        copied verbatim, so a fallback-stored API key travels inside the zip."""
+        """Regression (analysis #5, fixed): settings.json AND the obscura.db copy
+        are both scrubbed (UPDATE + VACUUM), so no key travels in the zip."""
         self.seed()
         db.save_settings({"ai": {"on": True, "key": "sk-secret"}})
         raw = unzip(backup.export_zip())["obscura.db"]
         self.assertNotIn(b"sk-secret", raw)
 
-    @known_bug
     def test_restore_locks_the_vault_again(self):
-        """BUG (analysis #3, Phase 3): crypto._state['key'] survives a restore, so the
-        vault claims to be unlocked with a key that may not match the restored data."""
+        """Regression (analysis #3, fixed): restore_zip() calls crypto.lock(), so a
+        stale in-memory key can never claim the restored vault is unlocked."""
         crypto.set_passphrase("pw12")
         self.seed()
         data = backup.export_zip()
         backup.restore_zip(data)
         self.assertFalse(crypto.status()["unlocked"])
 
-    @known_bug
     def test_restore_tolerates_directory_entries_in_the_zip(self):
-        """BUG (analysis #3, Phase 3): a directory entry ('encrypted/') crashes the
-        restore AFTER the live database has already been replaced."""
+        """Regression (analysis #3, fixed): a directory entry ('encrypted/') used to
+        crash the restore AFTER the live database had already been replaced —
+        payload is now staged and validated before the swap."""
         self.seed()
         db_bytes = unzip(backup.export_zip())["obscura.db"]
         backup.restore_zip(make_zip({"obscura.db": db_bytes}, dirs=["encrypted/"]))
 
-    @known_bug
     def test_restore_never_enables_python_scrapers(self):
-        """BUG (analysis #4, Phase 2): restored settings can switch on pyScrapers, so
-        restoring someone else's backup becomes a code-execution path."""
+        """Regression (analysis #4, fixed): restored settings and the restored DB
+        row both get pyScrapers forced back off."""
         self.seed()
         data = self._rezip(backup.export_zip(), settings_json=b'{"pyScrapers": true}')
         backup.restore_zip(data)
