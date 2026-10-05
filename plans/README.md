@@ -95,11 +95,11 @@ Two plans touch `db.py` and must not run concurrently: **P0-DESKTOP Step 3** (wr
 
 | Plan | Status |
 |---|---|
-| [P7](P7-build-artifacts-and-bundle-junk.md) — build artifacts & bundle junk | **DONE (branch `executor-p7`, commit `6140e3a`)** — reviewer-verified: bundle listing clean, findstr check empty, commit scope = `.gitignore` only. Pending user action: merge branch + delete the 4 untracked `frontend\` files in the main tree (they cannot cross the worktree boundary — untracked) |
+| [P7](P7-build-artifacts-and-bundle-junk.md) — build artifacts & bundle junk | **DONE** — merged into master (`152df81`), 4 junk files deleted, ignore rules active |
 | [P0-DESKTOP](P0-DESKTOP-portable-native-app.md) — portable native app | **DONE (verified 2026-10-05)** — criteria 1-5 all re-checked by the reviewer: clean build, runs from `%TEMP%\obscura-portable` (native window + WebView2 + HTTP 403 + 24 scrapers installed), fails legibly (modal box + `startup-error.log`), recreates `data\`, suite `Ran 90 OK (5 skipped)`. Remaining MANUAL eyeball: user opens `%TEMP%\obscura-portable\Obscura.exe`, confirms window renders + one live lookup; optional Step 5 (tkinter→native dialogs) declined as out of scope |
-| [P0](P0-repo-hygiene.md) — repo hygiene | TODO |
-| [P1](P1-yaml-scraper-ssrf.md) — yaml scraper SSRF | TODO (confirmed open: `scrapers.py:116` still fetches with no guard) |
-| [P2](P2-ssrf-dns-rebinding.md) — DNS rebinding | TODO (after P1) (confirmed open: `_safe_image_url` resolve-then-fetch, no `net_guard`) |
+| [P0](P0-repo-hygiene.md) — repo hygiene | **DONE except Step 6** — 10 themed commits + merge, clean tree, 24 scrapers tracked, `requirements.lock.txt` present, fresh clone runs `90 OK (5 skipped)` (reviewer-verified). Outstanding: rewrite `backend/PATCHES.md` + `PHASE0.md` (still cite nonexistent tests) |
+| [P1](P1-yaml-scraper-ssrf.md) — yaml scraper SSRF | **DONE (branch `executor-p1`, commit `54bb8e3`, awaiting merge)** — reviewer-verified: `run_yaml` guarded, `net_guard.py` hosts `safe_image_url`, 8 new tests, my re-run `Ran 98 OK (5 skipped)` |
+| [P2](P2-ssrf-dns-rebinding.md) — DNS rebinding / redirects | **DONE (branch `executor-p2`, commit `3cd5a87`, stacked on `executor-p1`, awaiting merge)** — `safe_get` re-validates every hop + blocks https→http downgrade; TOCTOU documented as residual (no IP pinning, per plan); 4 new tests; my re-run `Ran 102 OK (5 skipped)` |
 | [P3](P3-app-lock-is-client-side.md) — app lock | TODO (confirmed open: lock screen in `ui.js:47`, no backend check) |
 | [P4](P4-restore-blocks-event-loop.md) — restore event loop | TODO (confirmed open: `server.py:831` `async def` calls blocking `backup.restore_zip`) |
 | [P5](P5-wipe-residue.md) — wipe residue | TODO (confirmed open: `server.py:798-820` no `POSTER_DIR`, no `.prev`, no `VACUUM`) |
