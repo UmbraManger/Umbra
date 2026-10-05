@@ -116,7 +116,9 @@ def run_yaml(path: str, title: str = "", url: str = "") -> dict:
     if not target: raise ValueError("no url and no search template in yaml")
     if not net_guard.safe_image_url(target):
         raise ValueError("blocked unsafe scraper target URL (private/loopback address)")
-    r = requests.get(target, timeout=25, headers={"User-Agent": "Mozilla/5.0 (Obscura)"})
+    # safe_get re-validates every redirect hop (P2: Gap 2, blind redirects).
+    r = net_guard.safe_get(requests, target, timeout=25,
+                           headers={"User-Agent": "Mozilla/5.0 (Obscura)"})
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
     out = {}

@@ -22,6 +22,7 @@ HTML = ('<h1 class="title">Alpha</h1><span class="year">Released 1999</span>'
 
 class FakeResponse:
     text = HTML
+    status_code = 200       # safe_get reads status_code on every hop
     def raise_for_status(self): pass
 
 
@@ -176,3 +177,66 @@ class NetGuardTests(unittest.TestCase):
 
     def test_guard_blocks_non_url(self):
         self.assertFalse(net_guard.safe_image_url("not-a-url"))
+
+
+class _Redirect:
+    """Minimal 3xx response: only status_code + Location are read by safe_get."""
+    def __init__(self, location: str, status: int = 302):
+        self.status_code = status
+        self.headers = {"Location": location}
+
+
+class _Ok:
+    status_code = 200
+    text = ""
+
+
+class _StubSession:
+    """Scripted session: replays queued responses, records every (url, kw)."""
+    def __init__(self, *responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def get(self, url, **kw):
+        self.calls.append((url, kw))
+        return self.responses.pop(0)
+
+
+class SafeGetTests(unittest.TestCase):
+    """P2: safe_get re-validates every redirect hop (Gap 2, blind redirects).
+    All stubs — no live network: the loopback hop is a numeric IP (parsed
+    locally), allowed hostnames run with the resolver stubbed to a public IP."""
+
+    def test_safe_get_blocks_redirect_to_loopback(self):
+        s = _StubSession(_Redirect("http://127.0.0.1:8080/admin"))
+        with self.assertRaises(ValueError):
+            net_guard.safe_get(s, "http://cdn.example/pic.jpg", timeout=5)
+        self.assertEqual(len(s.calls), 1)                 # loopback hop never fetched
+        self.assertFalse(s.calls[0][1].get("allow_redirects"))   # manual redirects
+        self.assertEqual(s.calls[0][1]["timeout"], 5)     # **kw passes through
+
+    def test_safe_get_allows_public_redirect(self):
+        final = _Ok()
+        s = _StubSession(_Redirect("https://img.cdn.test/pic.jpg"), final)
+        with _stub_public_dns():
+            r = net_guard.safe_get(s, "https://entry.example/x")
+        self.assertIs(r, final)
+        self.assertEqual([u for u, _ in s.calls],
+                         ["https://entry.example/x", "https://img.cdn.test/pic.jpg"])
+
+    def test_safe_get_stops_after_max_redirects(self):
+        s = _StubSession(*[_Redirect("https://loop.example/x")] * (net_guard.MAX_REDIRECTS + 1))
+        with _stub_public_dns():
+            with self.assertRaises(ValueError):
+                net_guard.safe_get(s, "https://loop.example/x")
+        self.assertEqual(len(s.calls), net_guard.MAX_REDIRECTS + 1)
+
+    def test_safe_get_rejects_https_to_http_downgrade(self):
+        # Policy (deliberate P2 choice): the http target below is public and
+        # would pass the host guard, but after an encrypted hop we never
+        # silently degrade the fetch to plaintext.
+        s = _StubSession(_Redirect("http://img.cdn.test/pic.jpg"), _Ok())
+        with _stub_public_dns():
+            with self.assertRaises(ValueError):
+                net_guard.safe_get(s, "https://entry.example/x")
+        self.assertEqual(len(s.calls), 1)

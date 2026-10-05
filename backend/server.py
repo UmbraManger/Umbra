@@ -11,7 +11,7 @@ import requests
 import cloudscraper
 
 import db, crypto, keystore, backup as backup_engine
-from net_guard import safe_image_url
+from net_guard import safe_image_url, safe_get
 
 # cloudscraper session for downloading images from Cloudflare-protected sites
 _cf_scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False})
@@ -530,7 +530,8 @@ def _download_image(url: str) -> str:
                 iafd_scraper = None
             if iafd_scraper is not None:
                 try:
-                    r = iafd_scraper.iafd_session.get(url, timeout=15)
+                    # iafd_session shares the redirect exposure — same guard.
+                    r = safe_get(iafd_scraper.iafd_session, url, timeout=15)
                     return _store_response_image(r)
                 except Exception as e:
                     log.warning("[download-image] iafd session failed: %s — %s", url[:80], e)
@@ -538,9 +539,9 @@ def _download_image(url: str) -> str:
         # Use cloudscraper for other Cloudflare-protected sites,
         # fall back to plain requests for others.
         try:
-            r = _cf_scraper.get(url, timeout=15, **extra)
+            r = safe_get(_cf_scraper, url, timeout=15, **extra)
         except Exception:
-            r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0", **extra.get('headers', {})})
+            r = safe_get(requests, url, timeout=15, headers={"User-Agent": "Mozilla/5.0", **extra.get('headers', {})})
         return _store_response_image(r)
     except Exception as e:
         log.warning("[download-image] failed: %s — %s", url[:80], e)
