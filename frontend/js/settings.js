@@ -268,8 +268,7 @@ function renderSettings(){
   }else{
    const cur=$('#lk-cur');
    if(!cur||!cur.value){e.target.checked=true;toast('Enter Current Password To Disable','alert-triangle');cur&&cur.focus();return}
-   const h=await sha256(cur.value);
-   if(h!==settings.lock.hash){e.target.checked=true;toast('Wrong Current Password','alert-triangle');cur.classList.add('err');return}
+   if(!(await passMatches(cur.value,settings.lock.hash))){e.target.checked=true;toast('Wrong Current Password','alert-triangle');cur.classList.add('err');return}
    settings.lock.on=false;saveSettings();toast('App Lock Disabled','lock-open');
   }
  });
@@ -286,8 +285,10 @@ function renderSettings(){
     if(!cur||!cur.value){e.target.checked=true;toast('Enter Current Passphrase To Disable','alert-triangle');cur&&cur.focus();return}
     const u=await fetch('/api/images/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({passphrase:cur.value})});
     if(!u.ok){e.target.checked=true;toast('Wrong Passphrase','alert-triangle');return}
-    await fetch('/api/images/enabled',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:false})});
+    const d=await fetch('/api/images/enabled',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on:false})});
+    if(!d.ok){e.target.checked=true;toast('Could Not Disable Image Protection - Is It Unlocked?','alert-triangle');return}
     settings.imgProt.on=false;saveSettings();toast('Image Protection Disabled','shield-off');
+    reloadFailedBackendImages();   // blobs were just decrypted — retry any 423'd images
    }
    return;
   }
@@ -298,8 +299,7 @@ function renderSettings(){
   }else{
    const cur=$('#ip-cur');
    if(!cur||!cur.value){e.target.checked=true;toast('Enter Current Passphrase To Disable','alert-triangle');cur&&cur.focus();return}
-   const ch=await sha256(cur.value);
-   if(ch!==settings.imgProt.hash){e.target.checked=true;toast('Wrong Passphrase','alert-triangle');cur.classList.add('err');return}
+   if(!(await passMatches(cur.value,settings.imgProt.hash))){e.target.checked=true;toast('Wrong Passphrase','alert-triangle');cur.classList.add('err');return}
    settings.imgProt.on=false;encKey=null;saveSettings();toast('Image Protection Disabled','shield-off');
   }
  });

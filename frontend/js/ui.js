@@ -61,11 +61,11 @@ function lockApp(){
  const inp=$('#lk-unlock');
  inp.focus();
  const attempt=async()=>{
-  const h=await sha256(inp.value);
-  if(h===settings.lock.hash){
-   root.classList.remove('show');root.innerHTML='';
-   toast('Welcome Back','aperture');
-  }else{
+   if(await passMatches(inp.value,settings.lock.hash)){
+    root.classList.remove('show');root.innerHTML='';
+    toast('Welcome Back','aperture');
+    Sync.checkImageLock();   // image vault prompt was deferred behind this lock
+   }else{
    $('#lk-err').textContent='Wrong Password - Try Again';
    const c=$('#lockcard');c.classList.remove('shake');void c.offsetWidth;c.classList.add('shake');
    inp.select();
@@ -117,7 +117,10 @@ function tagInput(box,vals,sugs,opts={}){
  }
  box.addEventListener('click',e=>{const tx=e.target.closest('.tx');if(tx){vals.splice(+tx.dataset.i,1);draw();notify()}});
  draw();
- return {get:()=>vals.slice(),set:nv=>{vals.length=0;vals.push(...(nv||[]));draw();notify()}};
+ return {get:()=>vals.slice(),set:nv=>{vals.length=0;vals.push(...(nv||[]));draw();notify()},
+  // Text typed into the box but never committed (no Enter/comma/suggestion click)
+  // is still in the input, not in vals — commit it so a Save can't drop it.
+  flush(){const inp=box.querySelector('.tag-in');if(!inp||!inp.value.trim())return false;add(titleCase(inp.value.trim()));return true}};
 }
 /* ===== CATEGORY PICKER ===== */
 function openCategoryPicker(selected,onApply){

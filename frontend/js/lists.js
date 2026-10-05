@@ -1,6 +1,7 @@
 "use strict";
 /* ===== TABS ===== */
 function yearsRange(){const ys=new Set();DB.movies.forEach(m=>ys.add(m.year));DB.scenes.forEach(sc=>ys.add(String(sc.date).slice(0,4)));return [...ys].filter(Boolean).sort()}
+let _ypDocClose=null; // one document-click closer for the year picker (replaced, not stacked)
 function filterCount(tab){const f=T[tab].f;if(!f)return 0;if(tab==='performers')return(f.gender?1:0)+f.nationalities.size+f.hairColors.size+f.ethnicities.size+(f.boobType?1:0)+(f.piercings?1:0)+(f.tattoos?1:0)+((f.csMin||f.csMax)?1:0)+((f.heightMin||f.heightMax)?1:0)+(f.sort!=='az'?1:0);return f.studios.size+f.cats.size+f.performers.size+((f.ymin||f.ymax)?1:0)}
 /* Shared pager markup for the tab lists and the detail-page catalogues
    (studio/category movies + scenes), so paging looks and behaves the same
@@ -223,6 +224,8 @@ function yearPickerInit(pop,pend,updBadge){
    closePopup();updBadge();
   }
  });
+ if(_ypDocClose)document.removeEventListener('click',_ypDocClose);
+ _ypDocClose=closePopup;
  document.addEventListener('click',closePopup);
 }
 function pageHeadHTML(tab){

@@ -36,21 +36,33 @@ const DEF_SETTINGS={
   ai:{on:false,provider:'openai',endpoint:'https://api.openai.com/v1',model:'gpt-4o-mini',key:''},
   lock:{on:false,hash:''},
   imgProt:{on:false,salt:'',hash:''},
+  screenshot:{scale:2,format:'png',quality:92,watermark:true,pageLabel:true,autoDownload:false},
+  gallery:{count:12},
+  playlists:[],
   share:{platforms:['x','reddit','telegram','whatsapp'],watermark:true,caption:true,defaultCaption:'',captions:{},defaultCaptions:{movie:'',scene:'',performer:'',studio:''}}
 };
+// One settings-merge implementation for every load path (localStorage boot and
+// backend sync) so the same keys are deep-merged everywhere.
+function mergeSettings(base,ext){
+ if(!ext||typeof ext!=='object')return base;
+ return {...base,...ext,
+  adv:{...(base.adv||{}),...(ext.adv||{})},
+  sources:{movie:[],scene:[],performer:[],...(ext.sources||{})},
+  scrapers:Array.isArray(ext.scrapers)?ext.scrapers:(base.scrapers||[]),
+  pyScrapers:!!ext.pyScrapers,
+  proxy:{...(base.proxy||{}),...(ext.proxy||{})},
+  ai:{...(base.ai||{}),...(ext.ai||{})},
+  lock:{...(base.lock||{}),...(ext.lock||{})},
+  imgProt:{...(base.imgProt||{}),...(ext.imgProt||{})},
+  share:{...(base.share||{}),...(ext.share||{})},
+  screenshot:{...(base.screenshot||{}),...(ext.screenshot||{})},
+  gallery:{...(base.gallery||{}),...(ext.gallery||{})},
+  playlists:Array.isArray(ext.playlists)?ext.playlists:(base.playlists||[])};
+}
 let settings=JSON.parse(JSON.stringify(DEF_SETTINGS));
 try{
  const s=JSON.parse(localStorage.getItem('obscura:v1')||'null');
- if(s)settings={...settings,...s,
-  adv:{...settings.adv,...(s.adv||{})},
-  sources:{movie:[],scene:[],performer:[],...(s.sources||{})},
-  scrapers:Array.isArray(s.scrapers)?s.scrapers:[],
-  pyScrapers:!!s.pyScrapers,
-  proxy:{...settings.proxy,...(s.proxy||{})},
-  ai:{...settings.ai,...(s.ai||{})},
-  lock:{...settings.lock,...(s.lock||{})},
-  imgProt:{...settings.imgProt,...(s.imgProt||{})},
-  share:{...settings.share,...(s.share||{})}};
+ if(s)settings=mergeSettings(settings,s);
  if(!settings.catLimit)settings.catLimit=10;
  if(!settings.cwLimit)settings.cwLimit=4;
  if(typeof settings.perPage==='number')settings.perPage={movies:settings.perPage,scenes:settings.perPage,performers:settings.perPage,studios:settings.perPage,categories:settings.perPage};
@@ -58,8 +70,20 @@ try{
  ['movies','scenes','performers','studios','categories'].forEach(k=>{if(!settings.perPage[k])settings.perPage[k]=24});
  if(!settings.proxy.proto)settings.proxy.proto='http';
  if(!settings.adv)settings.adv={accent:'',background:'',font:'',radius:null,border:'1'};
-}catch(e){}
-function saveSettings(){try{localStorage.setItem('obscura:v1',JSON.stringify(settings))}catch(e){}Sync.pushSettings()}
+}catch(e){
+ // Corrupt settings: keep a raw forensic copy so nothing is silently lost when
+ // saveSettings() later overwrites the key.
+ try{localStorage.setItem('obscura:v1.corrupt-'+Date.now(),localStorage.getItem('obscura:v1')||'')}catch(e2){}
+ setTimeout(()=>toast('Stored Settings Were Corrupt - A Raw Copy Was Kept In Local Storage','alert-triangle'),0);
+}
+function saveSettings(){
+ try{
+  const s=JSON.parse(JSON.stringify(settings));
+  if(s.ai)s.ai.key='';   // AI key is session-only — never persisted in localStorage
+  localStorage.setItem('obscura:v1',JSON.stringify(s));
+ }catch(e){toast('Could Not Save Settings - Local Storage Full Or Unavailable','alert-triangle')}
+ Sync.pushSettings();
+}
 async function refreshScrapers(){
  if(!Sync.on)return;
  try{
@@ -79,6 +103,12 @@ const T={
   performers:{q:'',view:'grid',cw:settings.cardWidths?.performers||180,page:1,f:{gender:'',nationalities:new Set(),hairColors:new Set(),ethnicities:new Set(),boobType:'',piercings:'',tattoos:'',csMin:'',csMax:'',heightMin:'',heightMax:'',sort:'az'}},
   studios:{q:'',view:'grid',cw:settings.cardWidths?.studios||200,page:1},categories:{q:'',view:'grid',cw:settings.cardWidths?.categories||200,page:1}
 };
+function resetTabFilters(tab){
+ if(!T[tab])return;
+ if(tab==='performers')T.performers.f={gender:'',nationalities:new Set(),hairColors:new Set(),ethnicities:new Set(),boobType:'',piercings:'',tattoos:'',csMin:'',csMax:'',heightMin:'',heightMax:'',sort:'az'};
+ else if(T[tab].f)T[tab].f={studios:new Set(),cats:new Set(),performers:new Set(),ymin:'',ymax:'',sort:'new'};
+ T[tab].q='';T[tab].page=1;
+}
 const state={view:{name:'tab',tab:'movies'},history:[],profileTab:'favorites'};
 const catExpand={};const castExpand={};const descExpand={};const infoExpand={};let lastScanDir=null;
 const bulkSel={active:false,selected:new Set()};

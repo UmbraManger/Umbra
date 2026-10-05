@@ -131,7 +131,7 @@ document.addEventListener('click',e=>{
          const r=await fetch('/api/scrapers/file',{method:'POST',body:fd});
          if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||'Upload Failed')}
          const j=await r.json();
-         if(j&&j.id)await fetch(`/api/scrapers/${j.id}/structure`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(det)}).catch(()=>{});
+         if(j&&j.id)await fetch(`/api/scrapers/${j.id}/structure`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(det)}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status)}).catch(()=>toast('Scraper Structure Could Not Be Saved','alert-triangle'));
          await refreshScrapers();
          closeModal();
          renderSettings();icons();
@@ -144,11 +144,11 @@ document.addEventListener('click',e=>{
  }
  else if(act==='scr-toggle'){
   const sid=a.dataset.id;
-  fetch(`/api/scrapers/${sid}/toggle`,{method:'POST'}).then(async()=>{await refreshScrapers();renderSettings();icons()}).catch(()=>toast('Failed','alert-triangle'));
+  fetch(`/api/scrapers/${sid}/toggle`,{method:'POST'}).then(async r=>{if(!r.ok)throw new Error('HTTP '+r.status);await refreshScrapers();renderSettings();icons()}).catch(()=>toast('Backend Rejected The Change','alert-triangle'));
  }
 else if(act==='scr-del'){
   const sid=a.dataset.id;
-  fetch(`/api/scrapers/${sid}`,{method:'DELETE'}).then(async()=>{await refreshScrapers();renderSettings();icons()}).catch(()=>toast('Failed','alert-triangle'));
+  fetch(`/api/scrapers/${sid}`,{method:'DELETE'}).then(async r=>{if(!r.ok)throw new Error('HTTP '+r.status);await refreshScrapers();renderSettings();icons()}).catch(()=>toast('Backend Rejected The Change','alert-triangle'));
 }
 else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Player: '+(settings.player==='internal'?'Internal':'OS Default'),'monitor-play')}
  else if(act==='toggle-fav'){
@@ -323,10 +323,8 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
  }
  else if(act==='filter'){const pop=$('[data-role=fpop]');pop&&pop.classList.toggle('open')}
  else if(act==='filter-clear'){
-  const tab=state.view.tab;
-  if(tab==='performers')T.performers.f={gender:'',nationalities:new Set(),hairColors:new Set(),ethnicities:new Set(),boobType:'',piercings:'',tattoos:'',csMin:'',csMax:'',heightMin:'',heightMax:'',sort:'az'};
-  else T[tab].f={studios:new Set(),cats:new Set(),performers:new Set(),ymin:'',ymax:'',sort:'new'};
-  T[tab].page=1;renderTab(tab);icons();
+  resetTabFilters(state.view.tab);
+  renderTab(state.view.tab);icons();
  }
  else if(act==='filter-apply'){
   const tab=state.view.tab,pend=T[tab]._pend;
@@ -484,7 +482,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
        }}];
       modalIdx=1;renderModal();
      }catch(e){
-      console.log('[fetch-gallery] error:',e,'body:',body);
+      console.error('[fetch-gallery] failed:',e);
       toast('Gallery Fetch Failed: '+e.message,'alert-triangle');
       $('#gl-fetch-go',f).disabled=false;$('#gl-fetch-go',f).innerHTML='Fetch<i data-lucide="images"></i>';icons(f);
      }
@@ -501,12 +499,15 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   if(Sync.on&&settings.ai.key){
    fetch('/api/ai/key',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({key:settings.ai.key})})
-    .then(()=>{settings.ai.key='';saveSettings();
-     toast('AI Settings Saved - Key Stored In The OS Credential Store','bot')})
-    .catch(()=>toast('AI Settings Saved Locally','bot'));
+    .then(r=>{
+     if(!r.ok)throw new Error('HTTP '+r.status);
+     settings.ai.key='';saveSettings();
+     toast('AI Settings Saved - Key Stored In The OS Credential Store','bot');
+    })
+    .catch(()=>toast('AI Key Kept Locally - The Backend Did Not Accept It, So It Was NOT Moved To The OS Credential Store','alert-triangle'));
    return;
   }
-  toast('AI Settings Saved','bot');
+  toast('AI Settings Saved - The Key Is Kept For This Session Only','bot');
  }
  else if(act==='ai-test'){
   if(Sync.on){
@@ -519,7 +520,23 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   if(!settings.ai.on){toast('Enable AI First','alert-triangle');return}
   if(!settings.ai.key.trim()&&settings.ai.provider!=='custom'){toast('API Key Required For This Provider','alert-triangle');return}
   a.disabled=true;
-  setTimeout(()=>{a.disabled=false;toast('Connection OK - Model Responding','plug-zap')},900);
+  // Real test against the configured endpoint (the old demo path always
+  // reported success without contacting anything).
+  (async()=>{
+   const ctrl=new AbortController();const to=setTimeout(()=>ctrl.abort(),8000);
+   const ai=settings.ai,prov=ai.provider,ep=(ai.endpoint||AI_PROVIDERS[prov]?.[1]||'').replace(/\/+$/,'');
+   try{
+    let url=ep+'/models',init={signal:ctrl.signal};
+    if(prov==='gemini')url=ep+'/models?key='+encodeURIComponent(ai.key);
+    else if(prov==='anthropic')init.headers=ai.key?{'x-api-key':ai.key,'anthropic-version':'2023-06-01'}:{};
+    else init.headers=ai.key?{Authorization:'Bearer '+ai.key}:{};
+    const r=await fetch(url,init);
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error((j.error&&j.error.message)||j.detail||('HTTP '+r.status))}
+    toast('Connection OK - '+ep+' Responding','plug-zap');
+   }catch(err){
+    toast('AI Test Failed: '+(err.name==='AbortError'?'Timed Out':err.message)+' - If The Provider Blocks Browser Requests, Use Backend Mode','alert-triangle');
+   }finally{clearTimeout(to);a.disabled=false}
+  })();
  }
  else if(act==='cache-clear'){
   clearImageCache(true);
@@ -540,10 +557,10 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    })}}],0,520);
  }
  else if(act==='bk-export'){
-  (async()=>{
+  const doExport=async(pass)=>{
    a.disabled=true;
    try{
-    const r=await fetch('/api/backup/export');
+    const r=await fetch('/api/backup/export'+(pass?'?passphrase='+encodeURIComponent(pass):''));
     if(!r.ok)throw new Error('HTTP '+r.status);
     const blob=await r.blob();
     const m=/filename="?([^";]+)"?/.exec(r.headers.get('Content-Disposition')||'');
@@ -552,27 +569,71 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
     link.href=u;link.download=m?m[1]:'Obscura-Backup.zip';
     document.body.appendChild(link);link.click();link.remove();
     setTimeout(()=>URL.revokeObjectURL(u),4000);
-    toast('Backup Exported','download');
+    toast(pass?'Encrypted Backup Exported':'Backup Exported','download');
    }catch(err){toast('Backup Failed: '+err.message,'alert-triangle')}
    a.disabled=false;
-  })();
+  };
+  openModal([{title:'Export Backup',html:()=>`
+   <div class="cmsg" style="margin-bottom:12px">Save A Complete Backup - Library Database, Protected Images, Scrapers And Settings. The AI API Key Is Never Included.</div>
+   <label class="flab">Passphrase (Optional) - Encrypts The Backup File</label>
+   <input class="field" id="bk-exp-pass" type="password" placeholder="Leave Empty For An Unencrypted .zip" autocomplete="new-password">`,
+   footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="bk-exp-go"><i data-lucide="download"></i>Export</button>`,
+   mount(b,f){$('#bk-exp-go',f)?.addEventListener('click',()=>{
+    const pass=$('#bk-exp-pass',b)?.value||'';
+    closeModal();doExport(pass);
+   })}}],0,520);
  }
  else if(act==='bk-restore'){
+  const askPass=(prompt)=>new Promise(res=>{
+   let settled=false;
+   const done=v=>{if(settled)return;settled=true;res(v);closeModal()};
+   openModal([{title:'Backup Passphrase',html:()=>`
+    <div class="cmsg" style="margin-bottom:12px">${prompt}</div>
+    <input class="field" id="bk-pass-in" type="password" placeholder="Passphrase" autocomplete="off">`,
+    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="bk-pass-ok"><i data-lucide="unlock"></i>Continue</button>`,
+    mount(b,f){
+     const inp=$('#bk-pass-in',b);setTimeout(()=>inp&&inp.focus(),50);
+     $('#bk-pass-ok',f)?.addEventListener('click',()=>done(inp?.value||''));
+     inp?.addEventListener('keydown',e=>{if(e.key==='Enter')done(inp.value||'')});
+    },
+    onClose(){done(null)}}],0,460);
+  });
   const inp=document.createElement('input');
-  inp.type='file';inp.accept='.zip';
-  inp.addEventListener('change',()=>{
+  inp.type='file';inp.accept='.zip,.obk';
+  inp.addEventListener('change',async()=>{
    const f=inp.files[0];if(!f)return;
+   // Encrypted container (OBSCBK1 magic)? Then a passphrase is required.
+   let pass='';
+   try{
+    const head=new Uint8Array(await f.slice(0,7).arrayBuffer());
+    if(String.fromCharCode(...head)==='OBSCBK1'){
+     pass=await askPass('This Backup Is Passphrase-Protected. Enter The Passphrase It Was Exported With.');
+     if(pass===null)return;
+    }
+   }catch(e){}
+   const doRestore=async(pw)=>{
+    const fd=new FormData();fd.append('file',f);fd.append('confirm','RESTORE');
+    if(pw)fd.append('passphrase',pw);
+    const r=await fetch('/api/backup/restore',{method:'POST',body:fd});
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||('HTTP '+r.status))}
+    closeModal();toast('Backup Restored - Reloading...','history');
+    setTimeout(()=>location.reload(),900);
+   };
    openModal([{title:'Restore Backup',html:()=>`
     <div class="cmsg" style="margin-bottom:12px">Restoring <b>"${esc(f.name)}"</b> Replaces The Current Library, Images, Scrapers And Settings With The Backup Contents. This Cannot Be Undone. Continue?</div>`,
     footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn danger" id="bk-rst"><i data-lucide="upload"></i>Restore</button>`,
     mount(){$('#bk-rst').addEventListener('click',async()=>{
-     const fd=new FormData();fd.append('file',f);fd.append('confirm','RESTORE');
      try{
-      const r=await fetch('/api/backup/restore',{method:'POST',body:fd});
-      if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||('HTTP '+r.status))}
-      closeModal();toast('Backup Restored - Reloading...','history');
-      setTimeout(()=>location.reload(),900);
-     }catch(err){toast('Restore Failed: '+err.message,'alert-triangle')}
+      await doRestore(pass);
+     }catch(err){
+      const msg=String(err.message||err);
+      if(/passphrase/i.test(msg)){
+       // wrong passphrase: retry in-place instead of restarting the flow
+       pass=await askPass('Wrong Passphrase - Try Again.');
+       if(pass===null)return;
+       try{await doRestore(pass)}catch(e2){toast('Restore Failed: '+e2.message,'alert-triangle')}
+      }else toast('Restore Failed: '+msg,'alert-triangle');
+     }
     })}}],0,520);
   });
   inp.click();
@@ -601,8 +662,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    const cur=$('#lk-cur'),p1=$('#lk-p1'),p2=$('#lk-p2');
    if(settings.lock.hash){
     if(!cur.value){cur.classList.add('err');toast('Enter Current Password','alert-triangle');return}
-    const ch=await sha256(cur.value);
-    if(ch!==settings.lock.hash){cur.classList.add('err');toast('Wrong Current Password','alert-triangle');return}
+    if(!(await passMatches(cur.value,settings.lock.hash))){cur.classList.add('err');toast('Wrong Current Password','alert-triangle');return}
    }
    const np=p1.value;
    if(np.length<4){p1.classList.add('err');toast('Password Must Be At Least 4 Characters','alert-triangle');return}
@@ -618,8 +678,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    const cur=$('#ip-cur'),p1=$('#ip-p1'),p2=$('#ip-p2');
    if(settings.imgProt.hash&&!Sync.on){
     if(!cur.value){cur.classList.add('err');toast('Enter Current Passphrase','alert-triangle');return}
-    const ch=await sha256(cur.value);
-    if(ch!==settings.imgProt.hash){cur.classList.add('err');toast('Wrong Passphrase','alert-triangle');return}
+    if(!(await passMatches(cur.value,settings.imgProt.hash))){cur.classList.add('err');toast('Wrong Passphrase','alert-triangle');return}
    }
    const np=p1.value;
    if(np.length<4){p1.classList.add('err');toast('Passphrase Must Be At Least 4 Characters','alert-triangle');return}
@@ -633,6 +692,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
     return;
    }
    if(!HAS_SUBTLE){toast('WebCrypto Is Unavailable In This Context','alert-triangle');return}
+   const newHash=await sha256(np);
    if(settings.imgProt.hash&&settings.imgProt.salt){
     const oldKey=await deriveKey(cur.value,settings.imgProt.salt);
     const salt=b2h(crypto.getRandomValues(new Uint8Array(16)));
@@ -648,16 +708,26 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
      }catch(e2){failed++}
     }
     if(failed){toast(`${failed} Image${failed===1?'':'s'} Could Not Be Re-encrypted - Passphrase Unchanged`,'alert-triangle');return}
+    // Transactional swap: journal the current meta + blobs first so an
+    // interruption at any point rolls back completely on next boot
+    // (recoverInterruptedRekey). Only then swap blobs and meta.
+    settings.imgProt.rekey={salt:settings.imgProt.salt,hash:settings.imgProt.hash};
+    if(!persistRekeyBackup()){delete settings.imgProt.rekey;return}
+    saveSettings();
     Object.assign(encStore,reEnc);
     saveEncStore();
     settings.imgProt.salt=salt;
+    settings.imgProt.hash=newHash;
+    delete settings.imgProt.rekey;
+    saveSettings();
+    dropRekeyBackup();
     encKey=newKey;
    }else{
     settings.imgProt.salt=b2h(crypto.getRandomValues(new Uint8Array(16)));
     encKey=await deriveKey(np,settings.imgProt.salt);
+    settings.imgProt.hash=newHash;
+    saveSettings();
    }
-   settings.imgProt.hash=await sha256(np);
-   saveSettings();
    renderSettings();icons();
    hydrateEncImages(document);
    toast('Passphrase Saved','key-round');
@@ -681,7 +751,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
  }
  else if(act==='ss-save'){
   settings.screenshot={
-   scale:+($('#ss-scale-v')?.textContent)||2,
+   scale:parseFloat($('#ss-scale-v')?.textContent)||2,
    watermark:$('#ss-wm')?.checked!==false,
    pageLabel:$('#ss-pagelabel')?.checked!==false,
    autoDownload:$('#ss-autodl')?.checked===true,
@@ -766,13 +836,13 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="ndir-ok">Add Directory</button>`,
    mount(){const inp=$('#ndir');inp.focus();
     $('#ndir-ok').addEventListener('click',()=>{const v=inp.value.trim();if(!v){inp.classList.add('err');return}settings.dirs.push(v);saveSettings();closeModal();renderSettings();icons();toast('Directory Added - Scanning...','folder-plus');lastScanDir=v;
-     if(Sync.on){fetch('/api/scan/candidates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dirs:[v]})}).then(r=>r.json()).then(j=>openImportModal(j.candidates||[])).catch(()=>toast('Scan Failed','alert-triangle'))}
+     if(Sync.on){fetch('/api/scan/candidates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dirs:[v]})}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}).then(j=>openImportModal(j.candidates||[])).catch(()=>toast('Scan Failed','alert-triangle'))}
     })}}],0,560);
  }
  else if(act==='dir-browse'){
   a.disabled=true;
   fetch('/api/dialog/folder',{method:'POST'})
-   .then(r=>r.json())
+   .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
    .then(j=>{a.disabled=false;if(j&&j.path){const i=$('#ndir');if(i)i.value=j.path}})
    .catch(()=>{a.disabled=false;toast('Folder Dialog Failed','alert-triangle')});
  }
@@ -784,7 +854,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   if(Sync.on){
    fill.style.width='40%';txt.textContent='Scanning On Backend...';
    fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dirs:settings.dirs})})
-    .then(r=>r.json())
+    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
     .then(j=>{
      fill.style.width='100%';txt.textContent='Scan Complete';
      a.disabled=false;
@@ -809,7 +879,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   prog.style.display='';fill.style.width='30%';txt.textContent='Scanning...';a.disabled=true;
   const scanDirs=lastScanDir?[lastScanDir]:settings.dirs;lastScanDir=null;
   fetch('/api/scan/candidates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dirs:scanDirs})})
-   .then(r=>r.json())
+   .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
    .then(j=>{fill.style.width='100%';txt.textContent='Scan Complete';a.disabled=false;openImportModal(j.candidates||[])})
    .catch(()=>{fill.style.width='100%';txt.textContent='Scan Failed';a.disabled=false;toast('Could Not Read Candidates','alert-triangle')});
  }
@@ -975,26 +1045,9 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   render();toast(n?`${n} Title${n===1?'':'s'} Converted To Title Case`:'All Titles Already In Title Case','case-upper');
  }
  else if(act==='proxy-detect'){
-  const b=a;b.disabled=true;
-  setTimeout(()=>{
-   b.disabled=false;
-   const r=mulberry32(hashStr(navigator.userAgent||'system'));
-   if(r()<0.7){
-    const protos=['http','https','socks5'];
-    const proto=protos[Math.floor(r()*3)];
-    const host='127.0.0.1';
-    const port=String([7890,8080,1080,9050][Math.floor(r()*4)]);
-    settings.proxy.proto=proto;settings.proxy.host=host;settings.proxy.port=port;
-    saveSettings();
-    const rd=$$('input[name=pxproto]').find(x=>x.value===proto);
-    if(rd)rd.checked=true;
-    const h=$('#px-host'),p=$('#px-port');
-    if(h)h.value=host;if(p)p.value=port;
-    toast(`System Proxy Detected - ${PROXY_PROTOS.find(x=>x[0]===proto)[1]} ${host}:${port}`,'scan-eye');
-   }else{
-    toast('No System Proxy Detected - Direct Connection In Use','wifi-off');
-   }
-  },900);
+  // Neither the browser nor the backend can enumerate system proxies; the old
+  // behavior fabricated a random result and wrote it into settings.
+  toast('System Proxy Detection Is Not Available Here - Enter Your Proxy Manually','alert-triangle');
  }
  else if(act==='proxy-save'){
   settings.proxy.proto=($$('input[name=pxproto]').find(r=>r.checked)?.value)||'http';
@@ -1029,13 +1082,14 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
      ok.disabled=true;ok.textContent='Clearing...';
      const wipeLocal=()=>{
       DB.movies.length=0;DB.scenes.length=0;DB.performers.length=0;DB.studios.length=0;DB.categories.length=0;
-      Object.keys(T).forEach(k=>{
-       if(T[k].f){T[k].f.studios=new Set();T[k].f.cats=new Set();T[k].f.performers=new Set();T[k].f.ymin='';T[k].f.ymax='';T[k].q=''}
-       else T[k].q='';
-      });
+      Object.keys(T).forEach(k=>resetTabFilters(k));
+      Positions.clearAll();
+      bulkSel.selected.clear();bulkSel.active=false;
+      state.profileTab='favorites';lastScanDir=null;
       clearImageCache(false);
       Object.keys(encStore).forEach(k=>delete encStore[k]);
       try{localStorage.removeItem('obscura:encimgs')}catch(e2){}
+      dropRekeyBackup();
       settings=JSON.parse(JSON.stringify(DEF_SETTINGS));
       saveSettings();applyTheme();applyAdvanced();
       closeModal();

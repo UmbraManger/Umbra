@@ -370,7 +370,9 @@ function detailToolbarInput(e){
  const el=e.target,role=el.dataset&&el.dataset.drole;
  if(role==='q'){
   detailUI.q=el.value;
-  detailRefreshSections(true);
+  // Debounced: typing used to re-render every catalogue section per keystroke.
+  clearTimeout(detailUI._qt);
+  detailUI._qt=setTimeout(()=>detailRefreshSections(true),180);
  }
  else if(role==='cw'){
   detailUI.cw=+el.value;
@@ -532,7 +534,7 @@ function renderDetail(kind,id){
   openModal([{title:'Gallery '+(curIdx+1)+'/'+allUrls.length,
    html:()=>`<div style="text-align:center"><img id="gl-img" src="" alt="" style="max-width:100%;max-height:80vh;border-radius:8px;opacity:.35;transition:opacity .15s"></div>`,
    footer:()=>`<button class="btn" data-action="gl-prev"><i data-lucide="chevron-left"></i></button><span class="mono" id="gl-count" style="font-size:12px"></span><button class="btn" data-action="gl-next"><i data-lucide="chevron-right"></i></button><span class="push"></span>`,
-   onClose(){lbCache.forEach(p=>p.then(u=>{u&&URL.revokeObjectURL(u)}))},
+   onClose(){lbCache.clear()},
    mount(bl,f){
     icons(bl);icons(f);
     const img=$('#gl-img',bl);

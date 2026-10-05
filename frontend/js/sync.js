@@ -26,6 +26,7 @@ const Sync={
    const j=await r.json();
    if(!j||!j.ok)return;
    this.on=true;
+   window.addEventListener('online',()=>this._flush());
    const lib=await(await fetch('/api/library')).json();
    if(lib){
     DB.movies=(lib.movies||[]).map(normItem);DB.scenes=(lib.scenes||[]).map(normItem);DB.performers=lib.performers||[];
@@ -53,45 +54,65 @@ const Sync={
    }
    const st=lib&&lib.settings?lib.settings:null;
    if(st&&Object.keys(st).length){
-    settings={...settings,...st,
-     adv:{...settings.adv,...(st.adv||{})},
-     sources:{movie:[],scene:[],performer:[],...(st.sources||{})},
-     scrapers:Array.isArray(st.scrapers)?st.scrapers:[],
-     pyScrapers:!!st.pyScrapers,
-     proxy:{...settings.proxy,...(st.proxy||{})},
-     ai:{...settings.ai,...(st.ai||{})},
-     lock:{...settings.lock,...(st.lock||{})},
-     imgProt:{...settings.imgProt,...(st.imgProt||{})}};
+    settings=mergeSettings(settings,st);
     if(!settings.catLimit)settings.catLimit=10;
     if(!settings.cwLimit)settings.cwLimit=4;
     if(!settings.adv)settings.adv={accent:'',background:'',font:'',radius:null,border:'1'};
     applyTheme();applyAdvanced();
    }
    await refreshScrapers();
-   await Positions.load();
-   render();
-   this.checkImageLock();
+    await Positions.load();
+    render();
+    // Deferred while the App Lock screen is up (lockApp picks it up after the
+    // password clears) so entry never stacks two password prompts at once.
+    if(!(settings.lock&&settings.lock.on))this.checkImageLock();
    toast('Backend Connected - Library Loaded','database');
   }catch(e){/* no backend - standalone demo mode */}
  },
+ // Outgoing write queue: pushes retry transient failures with backoff instead
+ // of being silently dropped; repeated settings writes coalesce into one.
+ _queue:[],_flushing:false,_warned:false,
+ _enqueue(req,coalesce){
+  if(coalesce)this._queue=this._queue.filter(q=>q.url!==req.url);
+  this._queue.push(req);
+  if(this._queue.length>400)this._queue.shift();
+  this._flush();
+ },
+ _flush(){
+  if(this._flushing||!this.on||!this._queue.length)return;
+  this._flushing=true;
+  const req=this._queue.shift();
+  fetch(req.url,{method:req.method,headers:{'Content-Type':'application/json'},body:req.body})
+   .then(r=>{
+    if(r.status===429||r.status>=500)throw new Error('retry');
+    if(!r.ok){if(!this._warned){this._warned=true;toast('Some Changes Were Rejected By The Backend','alert-triangle')}return}
+    this._warned=false;
+   })
+   .catch(()=>{
+    req.attempts=(req.attempts||0)+1;
+    if(req.attempts<=5){this._queue.unshift(req);setTimeout(()=>Sync._flush(),1200*req.attempts)}
+    else if(!this._warned){this._warned=true;toast('Some Local Changes Could Not Be Saved To The Backend','alert-triangle')}
+   })
+   .finally(()=>{this._flushing=false;if(this._queue.length)this._flush()});
+ },
  push(kind,op,item){
   if(!this.on||!item)return;
-  const url=op==='delete'?'/api/'+kind+'/'+item.id:'/api/'+kind;
-  fetch(url,{method:op==='delete'?'DELETE':op==='create'?'POST':'PUT',
-   headers:{'Content-Type':'application/json'},body:JSON.stringify(item)}).catch(()=>{});
+  this._enqueue({url:op==='delete'?'/api/'+kind+'/'+item.id:'/api/'+kind,
+   method:op==='delete'?'DELETE':op==='create'?'POST':'PUT',body:JSON.stringify(item)});
  },
  pushSettings(){
   if(!this.on)return;
-  fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify(settings)}).catch(()=>{});
+  this._enqueue({url:'/api/settings',method:'PUT',body:JSON.stringify(settings)},true);
  },
  async checkImageLock(){
   try{
    const r=await fetch('/api/images/status');
    if(!r.ok)return;
    const s=await r.json();
-   if(s.pass_set)settings.imgProt.hash=settings.imgProt.hash||'set';
-   if(s.on&&s.pass_set&&!s.unlocked)this.unlockPrompt();
+    if(s.pass_set)settings.imgProt.hash=settings.imgProt.hash||'set';
+    // Prompt whenever ciphertext still needs opening: protection on, or off
+    // with blobs left encrypted (unlock then repairs them back to plaintext).
+    if(!s.unlocked&&s.pass_set&&(s.on||(s.enc_count||0)>0))this.unlockPrompt();
   }catch(e){}
  },
  unlockPrompt(){
@@ -180,7 +201,7 @@ function normResult(kind,d){
  if(!Array.isArray(g.covers)){g.covers=[g.cover_a||g.coverA||g.cardThumbnail||g.image||null,g.cover_b||g.coverB||g.thumbnail||g.image||null].filter(Boolean);if(g.covers.length===2&&g.covers[0]===g.covers[1])g.covers=[g.covers[0]];}
  if(Array.isArray(g.categories))g.catNames=g.categories;
  if(Array.isArray(g.performers))g.performers=g.performers.map(p=>typeof p==='string'?p:(p&&p.name)||'').filter(Boolean);
- if(Array.isArray(g.groups))g.groups=g.groups.map(p=>typeof p==='string'?p:(p&&p.name)||'').filter(Boolean);
+ if(Array.isArray(g.groups))g.groups=g.groups.map(p=>typeof p==='string'?p:(p&&p.name)||'').map(s=>String(s).trim()).filter(n=>n&&!/^(movies?|dvds?|films?)$/i.test(n));
  if(kind==='movie'){g.posterF=g.posterF||g.image||null;g.posterB=g.posterB||null}
  if(kind==='performer')g.photo=g.photo||g.image||null;
  if(g.social_urls!=null&&g.urls==null)g.urls=g.social_urls;
@@ -192,7 +213,6 @@ async function backendFetch(kind,ctx,chosen,url){
  const body=chosen.type==='scraper'
   ?{kind,mode:'scraper',scraper_id:chosen.s.id,title:ctx.title,url:url||'',gallery_count:kind==='scene'?glCount:0}
   :{kind,mode:'site',source:chosen.s,title:ctx.title,url:url||'',gallery_count:kind==='scene'?glCount:0};
- console.log('[backendFetch] body:', JSON.stringify(body));
  try{
   const r=await fetch('/api/scrape',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||('HTTP '+r.status))}

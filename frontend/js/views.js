@@ -90,8 +90,9 @@ function rowFor(tab,x){
 }
 function yearMatch(f,y){
  if(f.ymin&&f.ymax)return y>=+f.ymin&&y<=+f.ymax;
- if(f.ymin)return y===+f.ymin;
- if(f.ymax)return y===+f.ymax;
+ // One-sided bounds must filter as ranges, not equality tests.
+ if(f.ymin)return y>=+f.ymin;
+ if(f.ymax)return y<=+f.ymax;
  return true;
 }
 function filtered(tab){

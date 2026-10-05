@@ -17,9 +17,21 @@ $('#main').addEventListener('click',e=>{const chk=e.target.closest('[data-bulk-i
 // cached copy of a js file — can still put it back). Sweeps on every DOM change,
 // same pattern as the item-count sweep below, so the cards are clean however
 // they were rendered.
-(function(){const re=/\s*·\s*\d+\s+Series\b/;const sweep=()=>{document.querySelectorAll('.cmeta.mono.dim').forEach(el=>{const t=el.textContent||'';const out=t.replace(re,'');if(out!==t)el.textContent=out})};sweep();new MutationObserver(sweep).observe(document.documentElement,{childList:true,subtree:true})})();
-// Safety net: strip the old list item-count label (mono dim counter) wherever it appears
-(function(){const isCount=el=>/^([\d]+[\u2013\-][\d]+ Of )?[\d]+ Items$/.test((el.textContent||'').trim());const sweep=()=>{document.querySelectorAll('div.mono.dim').forEach(el=>{if(el.className!=='mono dim')return;const st=el.getAttribute('style')||'';if(st.includes('margin:-10px 0 18px')||isCount(el))el.remove()})};sweep();new MutationObserver(sweep).observe(document.documentElement,{childList:true,subtree:true})})();
+// Safety nets (legacy-renderer artifacts): both sweeps share one
+// rAF-coalesced observer — they used to run as two full-DOM scans on every
+// single DOM mutation batch.
+(function(){
+ const re=/\s*·\s*\d+\s+Series\b/;
+ const isCount=el=>/^([\d]+[\u2013\-][\d]+ Of )?[\d]+ Items$/.test((el.textContent||'').trim());
+ const sweep=()=>{
+  document.querySelectorAll('.cmeta.mono.dim').forEach(el=>{const t=el.textContent||'';const out=t.replace(re,'');if(out!==t)el.textContent=out});
+  document.querySelectorAll('div.mono.dim').forEach(el=>{if(el.className!=='mono dim')return;const st=el.getAttribute('style')||'';if(st.includes('margin:-10px 0 18px')||isCount(el))el.remove()});
+ };
+ sweep();
+ let queued=false;
+ new MutationObserver(()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;sweep()})}).observe(document.documentElement,{childList:true,subtree:true});
+})();
+recoverInterruptedRekey();
 render();
 if(settings.imgProt&&settings.imgProt.on)hydrateEncImages(document);
 if(settings.lock.on)lockApp();

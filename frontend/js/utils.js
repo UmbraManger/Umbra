@@ -19,14 +19,23 @@ function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a
 function icons(){try{window.lucide&&lucide.createIcons({attrs:{'stroke-width':1.8}})}catch(e){}
  if(document.body&&document.body.dataset.booted&&typeof hydrateEncImages==='function')hydrateEncImages(document);}
 function toast(msg,icon='check'){const d=document.createElement('div');d.className='toast';d.innerHTML=`<i data-lucide="${icon}"></i><span>${esc(msg)}</span>`;$('#toast-root').appendChild(d);icons();setTimeout(()=>{d.classList.add('out');setTimeout(()=>d.remove(),260)},3200)}
+function fbHash(s){let h=5381;for(let i=0;i<7;i++){for(const c of String(s)+i)h=((h<<5)+h+c.charCodeAt(0))|0}return 'fb'+Math.abs(h).toString(16).padStart(14,'0')}
 async function sha256(s){
  try{
   const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('obscura::'+s));
   return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
- }catch(e){
-  let h=5381;for(let i=0;i<7;i++){for(const c of String(s)+i)h=((h<<5)+h+c.charCodeAt(0))|0}
-  return 'fb'+Math.abs(h).toString(16).padStart(14,'0');
- }
+ }catch(e){return fbHash(s)}
+}
+// Verify against BOTH digest formats: a hash stored while WebCrypto was
+// unavailable ('fb…' fallback) must still match in a WebCrypto context and
+// vice versa — comparing only one format permanently locks the user out.
+async function passMatches(pass,stored){
+ if(!stored)return false;
+ if(stored===fbHash(pass))return true;
+ try{
+  const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('obscura::'+pass));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')===stored;
+ }catch(e){return false}
 }
 
 /* ===== ADVANCED APPEARANCE ===== */
@@ -75,8 +84,16 @@ function applyAdvanced(){
 /* ===== IMAGE PROTECTION ===== */
 const HAS_SUBTLE=!!(window.crypto&&crypto.subtle&&crypto.subtle.deriveKey);
 let encKey=null,encPending=null;
-const encStore=(()=>{try{return JSON.parse(localStorage.getItem('obscura:encimgs')||'{}')}catch(e){return {}}})();
-const activeURLs=[];
+const encStore=(()=>{
+ try{const v=JSON.parse(localStorage.getItem('obscura:encimgs')||'{}');return v&&typeof v==='object'?v:{}}
+ catch(e){
+  // Corrupt store: keep the raw bytes recoverable instead of silently starting
+  // empty — a later save must never overwrite the only copy of the data.
+  try{localStorage.setItem('obscura:encimgs.corrupt-'+Date.now(),localStorage.getItem('obscura:encimgs')||'')}catch(e2){}
+  setTimeout(()=>toast('Protected Image Store Was Corrupt - A Raw Copy Was Kept In Local Storage','alert-triangle'),0);
+  return {}
+ }
+})();
 function saveEncStore(){try{localStorage.setItem('obscura:encimgs',JSON.stringify(encStore))}catch(e){toast('Local Storage Is Full - Encrypted Image Not Persisted','alert-triangle')}}
 const b2h=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
 const h2b=h=>new Uint8Array(h.match(/../g).map(x=>parseInt(x,16)));
@@ -86,26 +103,30 @@ async function deriveKey(pass,saltHex){
 }
 async function ensureKey(){
  if(encKey)return encKey;
- if(!settings.imgProt||!settings.imgProt.on||!settings.imgProt.hash)return null;
+ // Gate on the passphrase existing, not on the toggle: blobs already stored as
+ // enc:// are encrypted at rest either way, so hiding them when protection is
+ // switched off (the "images not showing" bug) helps nobody.
+ if(!settings.imgProt||!settings.imgProt.hash)return null;
  if(encPending)return encPending;
  encPending=new Promise(res=>{
   let settled=false;
-  openModal([{title:'Image Protection - Passphrase',html:()=>`
+  try{openModal([{title:'Image Protection - Passphrase',html:()=>`
    <div class="cmsg" style="margin-bottom:12px">Enter The Image Protection Passphrase To View Protected Images.</div>
    <input class="field" id="ip-pass" type="password" placeholder="Passphrase">`,
    footer:()=>`<span class="push"></span><button class="btn primary" id="ip-ok"><i data-lucide="unlock"></i>Unlock</button>`,
    mount(b,f){
     const inp=$('#ip-pass');setTimeout(()=>inp.focus(),50);
     const go=async()=>{
-     const chk=await sha256(inp.value);
-     if(chk!==settings.imgProt.hash){inp.classList.add('err');toast('Wrong Passphrase','alert-triangle');return}
-     encKey=await deriveKey(inp.value,settings.imgProt.salt);
-     settled=true;closeModal();res(encKey);hydrateEncImages(document);
+     try{
+      if(!(await passMatches(inp.value,settings.imgProt.hash))){inp.classList.add('err');toast('Wrong Passphrase','alert-triangle');return}
+      encKey=await deriveKey(inp.value,settings.imgProt.salt);
+      settled=true;closeModal();res(encKey);hydrateEncImages(document);
+     }catch(e){toast('Unlock Failed: '+e.message,'alert-triangle')}
     };
     $('#ip-ok',f).addEventListener('click',go);
     inp.addEventListener('keydown',e=>{if(e.key==='Enter')go()});
    },
-   onClose(){if(!settled){settled=true;res(null)}}}],0,460);
+   onClose(){if(!settled){settled=true;res(null)}}}],0,460)}catch(e){if(!settled){settled=true;res(null)}}
  }).finally(()=>{encPending=null});
  return encPending;
 }
@@ -116,19 +137,30 @@ async function encryptLocalFile(buf,mime){
  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,buf));
  return {iv:b2h(iv),data:b2h(ct),t:mime||'image/jpeg'};
 }
+// Bounded LRU of decrypted object URLs keyed by image id. Gallery re-renders
+// and preloads reuse the same URL instead of minting a new blob per render
+// (which grew memory without limit); oldest entries are revoked on eviction.
+const ENC_URL_MAX=48;
+const encURLCache=new Map();
+function encCachePut(key,url){
+ encURLCache.delete(key);encURLCache.set(key,url);
+ while(encURLCache.size>ENC_URL_MAX){const [oldKey,oldUrl]=encURLCache.entries().next().value;encURLCache.delete(oldKey);try{URL.revokeObjectURL(oldUrl)}catch(e){}}
+}
 async function encToObjectURL(id){
- const rec=encStore[String(id).replace(/^enc:\/\//,'')];if(!rec)return null;
+ const key=String(id).replace(/^enc:\/\//,'');
+ if(encURLCache.has(key)){const u=encURLCache.get(key);encURLCache.delete(key);encURLCache.set(key,u);return u}
+ const rec=encStore[key];if(!rec)return null;
  const k=await ensureKey();if(!k)return null;
  try{
   const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:h2b(rec.iv)},k,h2b(rec.data));
   const url=URL.createObjectURL(new Blob([pt],{type:rec.t||'image/jpeg'}));
-  activeURLs.push(url);
+  encCachePut(key,url);
   return url;
  }catch(e){return null}
 }
 function encBytes(){let n=0;for(const id in encStore){const r=encStore[id];n+=(r.iv.length+r.data.length)/2}return n}
 function clearImageCache(rehydrate){
- activeURLs.splice(0).forEach(u=>{try{URL.revokeObjectURL(u)}catch(e){}});
+ encURLCache.forEach(u=>{try{URL.revokeObjectURL(u)}catch(e){}});encURLCache.clear();
  encKey=null;
  if(rehydrate&&settings.imgProt&&settings.imgProt.on)hydrateEncImages(document);
 }
@@ -145,4 +177,39 @@ function hydrateEncImages(root){
    });
   }).finally(()=>setTimeout(()=>hydrating.delete(id),50));
  });
+}
+
+/* ===== TRANSACTIONAL RE-KEY (passphrase change) ===== */
+const REKEY_BAK='obscura:encimgs.rekey';
+function persistRekeyBackup(){
+ try{localStorage.setItem(REKEY_BAK,JSON.stringify(encStore))}
+ catch(e){toast('Could Not Save Re-Key Backup - Passphrase Unchanged','alert-triangle');return false}
+ return true;
+}
+function dropRekeyBackup(){try{localStorage.removeItem(REKEY_BAK)}catch(e){}}
+// Called at boot: if a passphrase change was interrupted mid-swap, roll the
+// whole vault back to the journaled pre-rekey state instead of leaving blobs
+// and meta out of sync (which would make every protected image undecryptable).
+function recoverInterruptedRekey(){
+ const ip=settings.imgProt||{};
+ if(!ip.rekey){dropRekeyBackup();return false}
+ try{
+  const raw=localStorage.getItem(REKEY_BAK);
+  if(raw){
+   const bak=JSON.parse(raw);
+   if(bak&&typeof bak==='object'){
+    for(const k in encStore)delete encStore[k];
+    Object.assign(encStore,bak);
+    saveEncStore();
+   }
+  }
+  if(ip.rekey.salt!=null)ip.salt=ip.rekey.salt;
+  if(ip.rekey.hash!=null)ip.hash=ip.rekey.hash;
+  delete ip.rekey;
+  encKey=null;
+  saveSettings();
+  dropRekeyBackup();
+  setTimeout(()=>toast('Interrupted Passphrase Change Was Reverted - Protected Images Unchanged','shield-alert'),0);
+  return true;
+ }catch(e){return false}
 }

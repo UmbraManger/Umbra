@@ -120,6 +120,7 @@ ${!isMovie?`<div style="margin-top:10px"><label class="flab">List Thumbnail</lab
     if(!Sync.on){toast('Server Not Connected - Paste Path Manually','alert-triangle');return}
     try{
      const r=await fetch('/api/dialog/file',{method:'POST'});
+     if(!r.ok)throw new Error('HTTP '+r.status);
      const j=await r.json();
      if(j.path){R.filePath=j.path;updateFileUI();toast('File Selected','film')}
     }catch(e){toast('Could Not Open File Dialog','alert-triangle')}
@@ -145,7 +146,7 @@ ${!isMovie?`<div style="margin-top:10px"><label class="flab">List Thumbnail</lab
     }
     toast(editing?'Saved Changes':'Movie Added');
    }else{
-    const mv=findMovieByTitle(d.movie);
+     const mv=resolveMovie(d.movie,studioId);
     let covers=[d.pA,d.pB].filter(Boolean);
     if(covers.length===2&&covers[0]===covers[1])covers=[covers[0]];
     const finalCovers=covers.length?covers:(item?.covers?.length?item.covers:[img('sc-'+slug(title)+'-a',800,450),img('sc-'+slug(title)+'-b',800,450)]);
@@ -178,6 +179,7 @@ ${!isMovie?`<div style="margin-top:10px"><label class="flab">List Thumbnail</lab
    scenes=parseInt(R.scenesEl?.value)||0;
   }else{
    date=$('#ff-date')?.value||null;
+   R.movieTag.flush();
    movie=R.movieTag.get()[0]||'';
   }
   const d={title,studio,year,date,scenes,movie,dur:parseInt($('#ff-dur')?.value)||0,dir:$('#ff-dir')?.value.trim()||'',actors:R.actors.slice(),cats:R.cats.slice(),desc:$('#ff-desc')?.value.trim()||'',pA:R.slotA.get(),pB:R.slotB.get(),thumb:parseInt($$('input[name=thumbpick]').find(r=>r.checked)?.value)||0,filePath:R.filePath||''};
@@ -264,7 +266,7 @@ function performerForm(item){
    $$('input[name=pfg]').forEach(r=>r.addEventListener('change',updGender));updGender();
    R.getStudio=()=>'__ok';
    R.fetchBtn=$('#fetchbtn');
-   R.fetchBtn.addEventListener('click',()=>{const _n=R.nameEl?.value?.trim()||'';console.log('[fetch-click] nameEl exists:',!!R.nameEl,'value:',_n,'current name:',item?.name);openFetchModal('performer',{title:_n||item?.name||'',gender:gender(),current:item||{},apply:u=>applyToPerfForm(R,u)});});
+   R.fetchBtn.addEventListener('click',()=>{const _n=R.nameEl?.value?.trim()||'';openFetchModal('performer',{title:_n||item?.name||'',gender:gender(),current:item||{},apply:u=>applyToPerfForm(R,u)});});
    wireFetchToggle(R,R.nameEl);
    return R;
   },
@@ -280,11 +282,10 @@ function performerForm(item){
   }});
 }
 function applyToPerfForm(R,u){
- console.log('[applyToPerfForm] called with keys:',Object.keys(u||{}));
  if(!u)return;
  if(u.name!=null)R.nameEl.value=u.name;
  const map={birth:'#pf-birth',ethnicity:'#pf-eth',nationality:'#pf-nat',hair:'#pf-hair',eyes:'#pf-eyes',piercings:'#pf-pierce',tattoos:'#pf-tat',measurements:'#pf-meas',twitter:'#pf-twitter',instagram:'#pf-instagram',onlyfans:'#pf-onlyfans'};
- for(const k in map){if(u[k]!=null){const el=$(map[k]);el&&(el.value=u[k]);console.log('[applyToPerfForm]',k,'->',map[k],'el:',!!el,'val:',el?.value)}}
+ for(const k in map){if(u[k]!=null){const el=$(map[k]);el&&(el.value=u[k])}}
  if(u.height!=null)$('#pf-h').value=u.height;
  if(u.weight!=null)$('#pf-w').value=u.weight;
  if(u.careerStart!=null)$('#pf-cs').value=u.careerStart;
@@ -306,11 +307,13 @@ async function wikiFetchDesc(name){
   if(r.ok){const j=await r.json();hits=(j.pages||[]).map(p=>({title:p.title,meta:(p.description||'')+' '+(p.excerpt||'')})).filter(h=>h.title)}
  }catch(e){}
  if(!hits.length){
-  const s=await fetch('https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch='+encodeURIComponent(name)+'&srlimit=8&format=json&origin=*').then(r=>r.json());
-  hits=((s&&s.query&&s.query.search)||[]).map(h=>({title:h.title,meta:h.snippet||''})).filter(h=>h.title);
+  try{
+   const s=await fetch('https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch='+encodeURIComponent(name)+'&srlimit=8&format=json&origin=*').then(r=>r.ok?r.json():null);
+   hits=((s&&s.query&&s.query.search)||[]).map(h=>({title:h.title,meta:h.snippet||''})).filter(h=>h.title);
+  }catch(e){}
  }
  for(const h of hits.slice(0,6)){
-  const e=await fetch('https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exintro=1&redirects=1&titles='+encodeURIComponent(h.title)+'&format=json&origin=*').then(r=>r.json());
+  let e=null;try{e=await fetch('https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exintro=1&redirects=1&titles='+encodeURIComponent(h.title)+'&format=json&origin=*').then(r=>r.ok?r.json():null)}catch(e2){}
   const pages=(e&&e.query&&e.query.pages)||{};const pg=pages[Object.keys(pages)[0]]||{};
   const ext=String(pg.extract||'').trim();
   const title=pg.title||h.title;

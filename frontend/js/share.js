@@ -209,7 +209,7 @@ function openShareDialog(){
      const file=new File([blob],`share-${slug(label)}${_ssExt()}`,{type:_ssMime()});
      if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
       try{await navigator.share({title:caption,text:caption,files:[file]});toast('Shared!','check-circle');if(autoDl)await _autoDlAll();closeModal();return;}
-      catch(e){if(e.name==='AbortError')return;console.log('Native share failed:',e);}
+      catch(e){if(e.name==='AbortError')return;console.error('Native share failed:',e);}
      }
      _downloadCanvas(canvases[0],file.name);
      toast('Your Browser Doesn\u2019t Support Native Sharing - Screenshot Downloaded Instead','image');

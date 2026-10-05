@@ -85,7 +85,6 @@ function buildCompareStep(kind,m,ctx,sourceLabel){
   $('#cmp-apply',f).addEventListener('click',()=>{
    const out={title:m.title};
    if(!isPostersOnly)$$('[data-fld]',b).forEach(c=>{if(c.checked&&!c.disabled)out[c.dataset.fld]=m[c.dataset.fld]});
-   console.log('[apply] out:',JSON.stringify(out));
    if($('#cmp-posters').checked){
     if(kind==='movie'){out.posterF=m.posterF;out.posterB=m.posterB}
     else if(kind==='scene'){out.covers=m.covers}
@@ -100,7 +99,6 @@ function buildCompareStep(kind,m,ctx,sourceLabel){
 function openFetchModal(kind,ctx){
  // Fallback: use current item name if title is empty
  if(!ctx.title&&ctx.current&&ctx.current.name)ctx.title=ctx.current.name;
- console.log('[openFetchModal] kind:',kind,'ctx.title:',ctx.title);
  const ai=settings.ai;
  const sites=(settings.sources[kind]||[]);
  const scrapers=settings.scrapers.filter(s=>s.kind===kind&&s.enabled);
@@ -145,7 +143,8 @@ function openAIFlow(kind,ctx){
  const ai=settings.ai;
  if(!ai.on){toast('Enable AI First - Settings › AI Assistant','bot');return}
  if(!ai.model.trim()){toast('Set A Model In AI Settings','alert-triangle');return}
- const aiResult=()=>mockResult(kind,ctx.title,'ai',AI_PROVIDERS[ai.provider]?.[0]||'AI',ctx.gender);
+ let _aiMemo=null;
+ const aiResult=()=>(_aiMemo||(_aiMemo=mockResult(kind,ctx.title,'ai',AI_PROVIDERS[ai.provider]?.[0]||'AI',ctx.gender)));
  const sAIConf={title:'AI Assistant - Configure',html:()=>`
   <div class="cmsg" style="margin-bottom:14px">The Assistant Will Look Up <b>"${esc(ctx.title)}"</b> And Prepare ${kindLabel(kind)} Metadata You Can Compare And Apply.</div>
   <div class="kv"><span class="kl">Provider</span><span class="kvs">${esc(AI_PROVIDERS[ai.provider]?.[0]||ai.provider)}</span></div>
