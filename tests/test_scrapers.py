@@ -3,7 +3,7 @@ from unittest import mock
 
 import db
 import scrapers
-from .helpers import IsolatedCase, known_bug
+from .helpers import IsolatedCase
 
 PY_SCRAPER = b'def scrape(title="", url=""):\n    return {"title": title.upper()}\n'
 PY_KWARGS = b'def scrape(**kw):\n    return {"kw": sorted(kw)}\n'
@@ -83,9 +83,9 @@ class SiteRoutingTests(IsolatedCase):
         out = scrapers.run_for_site("https://shop.example/x", title="t")
         self.assertEqual(out, {"title": "T"})
 
-    @known_bug
     def test_host_match_is_not_a_substring_match(self):
-        """BUG (analysis, Phase 4): 'ex.com' matches a scraper named 'apex.com.py'."""
+        """Regression (analysis D6, fixed): host routing is dot-boundary exact, so
+        'ex.com' no longer matches a scraper named 'apex.com.py'."""
         db.save_settings({"pyScrapers": True})
         scrapers.add("apex.com.py", PY_SCRAPER, "movie")
         with self.assertRaises(ValueError):
@@ -93,10 +93,10 @@ class SiteRoutingTests(IsolatedCase):
 
 
 class KnownBugTests(IsolatedCase):
-    @known_bug
     def test_remove_cannot_delete_files_outside_the_scraper_folder(self):
-        """BUG (analysis #4, Phase 2): meta.json 'file' is joined onto the scraper
-        dir unchecked, so a restored backup can make remove() delete '../victim'."""
+        """Regression (analysis #4, fixed): meta.json's 'file' is validated as a
+        bare name inside the scraper dir, so a crafted/restored entry cannot make
+        remove() delete '../victim'."""
         victim = os.path.join(db.DATA_DIR, "victim.txt")
         with open(victim, "w") as f:
             f.write("keep me")

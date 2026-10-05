@@ -14,7 +14,7 @@ try:
 except Exception:                                   # pragma: no cover
     HAVE_SERVER_DEPS = False
 
-from .helpers import IsolatedCase, known_bug
+from .helpers import IsolatedCase
 
 _server = None
 
@@ -107,21 +107,19 @@ class DestructiveEndpointTests(ServerCase):
 
 
 class KnownBugTests(ServerCase):
-    @known_bug
     def test_deleting_the_video_file_fails_closed_without_scan_folders(self):
-        """BUG (analysis #7, Phase 2): with no scan folders configured the
-        'outside the scan folders' check is skipped and any stored path is deleted."""
+        """Regression (analysis #7, fixed): no scan folders configured → the file
+        delete is refused (403) and the file survives; the row is untouched."""
         victim = self.tmpfile("anywhere/precious.mp4")
         mid = self.create_movie(filePath=victim)
         r = self.client.delete(f"/api/movies/{mid}?file=1&confirm=DELETE", headers=self.h)
         self.assertGreaterEqual(r.status_code, 400)
         self.assertTrue(os.path.exists(victim))
 
-    @known_bug
     def test_update_cannot_repoint_the_file_path(self):
-        """BUG (analysis #1, Phase 2): PUT accepts filePath, so any file can be
-        registered and then streamed. (The fix must IGNORE it rather than error,
-        because the frontend sends whole items on update.)"""
+        """Regression (analysis #1, fixed): PUT ignores a filePath repoint that
+        isn't inside the configured scan folders — it never errors, because the
+        frontend sends whole items on update."""
         real = self.tmpfile("lib/real.mp4")
         mid = self.create_movie(filePath=real)
         self.client.put("/api/movies", headers=self.h,

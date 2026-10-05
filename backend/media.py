@@ -11,6 +11,7 @@ VIDEO_MIME = {
     ".mp4": "video/mp4", ".mkv": "video/x-matroska", ".avi": "video/x-msvideo",
     ".webm": "video/webm", ".mov": "video/quicktime", ".m4v": "video/mp4",
     ".wmv": "video/x-ms-wmv", ".mpg": "video/mpeg", ".mpeg": "video/mpeg",
+    ".ts": "video/mp2t", ".flv": "video/x-flv", ".3gp": "video/3gpp",
 }
 
 SUB_EXT = {".srt", ".vtt", ".ass", ".ssa", ".sub"}
@@ -18,29 +19,6 @@ SUB_EXT = {".srt", ".vtt", ".ass", ".ssa", ".sub"}
 
 class RangeNotSatisfiable(Exception):
     """Requested byte range lies outside the file (HTTP 416)."""
-
-
-class PathNotAllowed(Exception):
-    """Client-supplied path falls outside the configured scan folders."""
-
-
-def safe_path(path) -> str:
-    """Canonicalize a client-supplied path and confine it to the scan folders.
-
-    Shared fail-closed invariant for everything that touches real files
-    (delete, media streaming, scan/import): the resolved path must live inside
-    one of settings.dirs. With no folders configured nothing is allowed, and
-    symlinks that resolve outside the folders are rejected via realpath."""
-    if not isinstance(path, str) or not path:
-        raise PathNotAllowed("invalid path")
-    roots = [os.path.realpath(r) for r in (db.get_settings().get("dirs") or [])
-             if isinstance(r, str) and r]
-    if not roots:
-        raise PathNotAllowed("no scan folders are configured — refusing path access")
-    real = os.path.realpath(path)
-    if not any(real == r or real.startswith(r + os.sep) for r in roots):
-        raise PathNotAllowed("path is outside the configured scan folders")
-    return real
 
 
 def _table(kind: str) -> str | None:
@@ -53,19 +31,43 @@ def get_path(kind: str, rid: str) -> str | None:
         return None
     row = db.one(f"SELECT file_path FROM {t} WHERE id=?", (rid,))
     p = row["file_path"] if row else None
-    if not p:
+    if not p or not os.path.isfile(p):
         return None
-    # DB file_path is client-writable through the CRUD API — confine it.
-    try:
-        real = safe_path(p)
-    except PathNotAllowed:
+    # Containment only when scan folders are known: without any configured
+    # folder there is no root to compare against (a record linked before the
+    # folders were set up must keep playing — see tests/test_media.py).
+    roots = scan_roots()
+    if roots and not inside_roots(p, roots):
         return None
-    return real if os.path.isfile(real) else None
+    return p
+
+
+def scan_roots() -> list[str]:
+    """Normalized real paths of the configured scan folders (empty = none)."""
+    return [os.path.realpath(r) for r in (db.get_settings().get("dirs") or [])
+            if isinstance(r, str) and r]
+
+
+def inside_roots(path: str, roots: list[str]) -> bool:
+    """True when path resolves to one of the roots or anything beneath it."""
+    p = os.path.normcase(os.path.realpath(path))
+    for r in roots:
+        r = os.path.normcase(r)
+        if p == r or p.startswith(r + os.sep):
+            return True
+    return False
 
 
 def mime_for(path: str) -> str:
     ext = os.path.splitext(path)[1].lower()
-    return VIDEO_MIME.get(ext) or mimetypes.guess_type(path)[0] or "application/octet-stream"
+    if ext in VIDEO_MIME:
+        return VIDEO_MIME[ext]
+    guessed = mimetypes.guess_type(path)[0] or ""
+    # Only ever label responses as video: anything else (text/html!) must fall
+    # back to octet-stream so a stored page can't be rendered from our origin.
+    if guessed.startswith("video/"):
+        return guessed
+    return "application/octet-stream"
 
 
 def parse_range(header: str | None, size: int) -> tuple[int, int] | None:
@@ -136,7 +138,12 @@ def probe(path: str) -> dict:
 
 
 def sidecar_subs(path: str) -> list:
-    """Find subtitle files next to the video file."""
+    """Find subtitle files next to the video file.
+
+    A subtitle belongs to the video when its own stem EQUALS the video stem or
+    extends it with a dot-suffix ('movie.en.srt', 'movie.forced.srt'). A plain
+    substring test would make 'a.mp4' pick up 'banana.srt' (bug D5).
+    """
     d = os.path.dirname(path)
     stem = os.path.splitext(os.path.basename(path))[0].lower()
     subs = []
@@ -145,9 +152,8 @@ def sidecar_subs(path: str) -> list:
             ext = os.path.splitext(f)[1].lower()
             if ext not in SUB_EXT:
                 continue
-            fl = f.lower()
-            # Match subtitles that share the video's stem or are generic
-            if stem and stem in fl:
+            sub_stem = os.path.splitext(f)[0].lower()
+            if stem and (sub_stem == stem or sub_stem.startswith(stem + ".")):
                 subs.append({"file": os.path.join(d, f), "name": f, "ext": ext})
             elif not stem:
                 subs.append({"file": os.path.join(d, f), "name": f, "ext": ext})
@@ -157,15 +163,17 @@ def sidecar_subs(path: str) -> list:
 
 
 def srt_to_vtt(path: str) -> bytes:
-    """Convert an SRT subtitle file to WebVTT format."""
+    """Convert an SRT subtitle file to WebVTT (a .vtt input is passed through
+    with a single header — it used to be wrapped in a second WEBVTT, bug D5)."""
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         content = f.read()
+    content = content.lstrip("\ufeff")
     # Replace SRT timestamp format (comma) with VTT format (dot)
     content = re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{3})", r"\1.\2", content)
-    # Strip any existing BOM
-    content = content.lstrip("\ufeff")
-    vtt = "WEBVTT\n\n" + content.strip() + "\n"
-    return vtt.encode("utf-8")
+    body = content.strip()
+    if body[:6].upper() == "WEBVTT":
+        return (body + "\n").encode("utf-8")
+    return ("WEBVTT\n\n" + body + "\n").encode("utf-8")
 
 
 def open_with_os(path: str) -> bool:

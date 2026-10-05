@@ -25,10 +25,22 @@ def _save_meta(m):
 def list_all():
     out = []
     for s in _meta():
-        p = os.path.join(db.SCRAPER_DIR, s["file"])
-        out.append({**s, "exists": os.path.exists(p),
-                    "size": os.path.getsize(p) if os.path.exists(p) else 0})
+        p = _scraper_path(s)
+        out.append({**s, "exists": bool(p and os.path.exists(p)),
+                    "size": (os.path.getsize(p) if p and os.path.exists(p) else 0)})
     return out
+
+
+def _scraper_path(s: dict) -> str | None:
+    """Validated absolute path of a scraper file, or None when meta.json's
+    'file' entry is crafted (traverses out, is nested, absolute, '.' or '..').
+    meta.json can arrive via a restored backup, so it is never trusted (bug #4)."""
+    fn = s.get("file") or ""
+    if not fn or fn != os.path.basename(fn.replace("\\", "/")):
+        return None
+    p = os.path.realpath(os.path.join(db.SCRAPER_DIR, fn))
+    root = os.path.realpath(db.SCRAPER_DIR)
+    return p if os.path.dirname(p) == root else None
 
 def add(filename: str, content: bytes, kind: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower()
@@ -48,8 +60,10 @@ def add(filename: str, content: bytes, kind: str) -> str:
 def remove(sid):
     for s in _meta():
         if s["id"] == sid:
-            try: os.remove(os.path.join(db.SCRAPER_DIR, s["file"]))
-            except OSError: pass
+            p = _scraper_path(s)          # never delete outside the scraper folder
+            if p:
+                try: os.remove(p)
+                except OSError: pass
     _save_meta([s for s in _meta() if s["id"] != sid])
 
 def toggle(sid):
@@ -115,14 +129,81 @@ def run_yaml(path: str, title: str = "", url: str = "") -> dict:
         if val not in (None, ""): out[key] = val
     return out
 
+def install_bundled() -> None:
+    """Frozen build: copy the scraper library shipped inside the bundle
+    (_MEIPASS/scrapers) into data/scrapers and register it in meta.json, so the
+    bundled scrapers work in the portable app without the user uploading them.
+
+    Bundled files keep their original names and get a deterministic id, while
+    user-installed scrapers are uuid-named (see add()), so the two never collide;
+    an existing file of the same name is left alone. Registered disabled: python
+    scrapers execute as local code, and the run_python gate stays the user's
+    explicit choice to flip."""
+    import sys as _sys
+    src = os.path.join(getattr(_sys, "_MEIPASS", ""), "scrapers")
+    if not getattr(_sys, "frozen", False) or not os.path.isdir(src):
+        return
+    os.makedirs(db.SCRAPER_DIR, exist_ok=True)
+    meta = _meta()
+    known = {s.get("file") for s in meta}
+    changed = False
+    for fn in sorted(os.listdir(src)):
+        if not fn.endswith(".py"):
+            continue
+        with open(os.path.join(src, fn), "rb") as f:
+            content = f.read()
+        dst = os.path.join(db.SCRAPER_DIR, fn)
+        # refresh a file we installed before (the id marks it as ours); never touch
+        # a file whose id isn't a bundled one.
+        sid = "bundled-" + fn[:-3]
+        ours = next((s for s in meta if s.get("id") == sid), None)
+        if ours and ours.get("file") == fn:
+            with open(dst, "wb") as f:
+                f.write(content)
+            continue
+        if fn in known or os.path.exists(dst):
+            continue
+        with open(dst, "wb") as f:
+            f.write(content)
+        meta.append({"id": sid, "name": fn[:-3], "file": fn, "type": "python",
+                     "kind": "movie", "enabled": False, "structure": None})
+        known.add(fn)
+        changed = True
+    if changed:
+        _save_meta(meta)
+
+
 def run_by_id(sid: str, title: str = "", url: str = "", kind: str = "", domain: str = "") -> dict:
     s = next((s for s in _meta() if s["id"] == sid), None)
     if not s: raise ValueError("scraper not found")
     if not s.get("enabled", True): raise ValueError("scraper is disabled")
-    path = os.path.join(db.SCRAPER_DIR, s["file"])
+    path = _scraper_path(s)
+    if not path: raise ValueError("scraper file entry in meta.json is invalid")
     payload = {"title": title or "", "url": url or "", "kind": kind or s.get("kind") or "", "domain": domain or ""}
     if s["type"] == "python": return run_python(path, payload)
     return run_yaml(path, title=title, url=url)
+
+def _host_matches(candidate: str, host: str) -> bool:
+    """True when `candidate` — a domain, a URL, or an uploaded filename such as
+    'shop.example.py' — designates `host` or a subdomain of it. Dot-boundary
+    only: 'apex.com' must never match the host 'ex.com' (bug D6)."""
+    c = (candidate or "").strip().lower()
+    if not c:
+        return False
+    if "://" in c:
+        c = (urlparse(c).hostname or "")
+    c = c.split("/")[0].split(":")[0]
+    for ext in (".py", ".yml", ".yaml"):
+        if c.endswith(ext):
+            c = c[:-len(ext)]
+    c = c[4:] if c.startswith("www.") else c
+    host = host[4:] if host.startswith("www.") else host
+    if not c or not host:
+        return False
+    if host == c:
+        return True
+    return "." in c and host.endswith("." + c)
+
 
 def run_for_site(src, title: str = "", url: str = "", kind: str = "") -> dict:
     raw = url or (src.get("url") if isinstance(src, dict) else str(src))
@@ -130,14 +211,14 @@ def run_for_site(src, title: str = "", url: str = "", kind: str = "") -> dict:
     # Check scraper meta (name/structure)
     for s in _meta():
         if not s.get("enabled", True): continue
-        if host and (host in (s.get("name") or "") or
-                     host in ((s.get("structure") or {}).get("source") or "")):
+        if _host_matches(s.get("name"), host) or \
+                _host_matches((s.get("structure") or {}).get("source"), host):
             return run_by_id(s["id"], title=title, url=url, kind=kind, domain=host)
     # Check assigned scraper sites from settings
     sites = db.get_scraper_sites()
     for kind_sites in sites.values():
         for entry in kind_sites:
-            if host and entry.get("domain") in host:
+            if _host_matches(entry.get("domain"), host):
                 scraper = next((s for s in _meta() if s["id"] == entry.get("scraper_id")), None)
                 if scraper and scraper.get("enabled", True):
                     return run_by_id(scraper["id"], title=title, url=url, kind=kind, domain=host)

@@ -2,7 +2,7 @@ import os
 
 import db
 import media
-from .helpers import IsolatedCase, known_bug
+from .helpers import IsolatedCase
 
 
 class RangeParsingTests(IsolatedCase):
@@ -41,10 +41,9 @@ class MimeTests(IsolatedCase):
         self.assertEqual(media.mime_for("a.MKV"), "video/x-matroska")
         self.assertEqual(media.mime_for("a.mp4"), "video/mp4")
 
-    @known_bug
     def test_non_video_files_are_never_served_as_html(self):
-        """BUG (analysis, Phase 2): unknown extensions fall back to mimetypes, so an
-        imported .html file is served as text/html from the app's own origin."""
+        """Regression (analysis C3, fixed): mime_for() only ever returns video/*
+        (or octet-stream), so a stored .html can't render from our origin."""
         self.assertFalse(media.mime_for("evil.html").startswith("text/"))
 
 
@@ -63,17 +62,16 @@ class SubtitleTests(IsolatedCase):
         self.assertTrue(out.startswith("WEBVTT\n\n"))
         self.assertIn("00:00:01.500 --> 00:00:02.000", out)
 
-    @known_bug
     def test_short_video_stem_does_not_match_unrelated_subtitles(self):
-        """BUG (analysis, Phase 4): `stem in filename` is a substring test, so a
-        video named a.mp4 picks up banana.srt."""
+        """Regression (analysis D5, fixed): subtitle stems must equal the video
+        stem or extend it with a dot-suffix."""
         v = self.tmpfile("v/a.mp4")
         self.tmpfile("v/banana.srt")
         self.assertEqual(media.sidecar_subs(v), [])
 
-    @known_bug
     def test_vtt_input_does_not_get_a_second_header(self):
-        """BUG (analysis, Phase 4): .vtt files are wrapped in another WEBVTT header."""
+        """Regression (analysis D5, fixed): a .vtt input is passed through with a
+        single WEBVTT header."""
         p = self.tmpfile("s.vtt", b"WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHi\n")
         self.assertEqual(media.srt_to_vtt(p).decode().count("WEBVTT"), 1)
 
@@ -92,10 +90,9 @@ class PathLookupTests(IsolatedCase):
                    (os.path.join(self._tmp, "gone.mp4"),))
         self.assertIsNone(media.get_path("movie", "mv-1"))
 
-    @known_bug
     def test_files_outside_the_scan_folders_are_not_served(self):
-        """BUG (analysis #1, Phase 2): any path stored in file_path can be streamed,
-        e.g. imgprot.json or the database itself."""
+        """Regression (analysis C3, fixed): get_path() enforces scan-folder
+        containment when folders are configured."""
         inside = os.path.join(self._tmp, "library")
         os.makedirs(inside)
         db.save_settings({"dirs": [inside]})
