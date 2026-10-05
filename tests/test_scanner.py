@@ -4,7 +4,7 @@ import os
 import crypto
 import db
 import scanner
-from .helpers import IsolatedCase, known_bug
+from .helpers import IsolatedCase
 
 
 class TitleGuessTests(IsolatedCase):
@@ -15,9 +15,8 @@ class TitleGuessTests(IsolatedCase):
     def test_extension_only_file_is_untitled(self):
         self.assertEqual(scanner.guess_title("/x/.mp4"), "Untitled")
 
-    @known_bug
     def test_apostrophes_are_not_capitalised(self):
-        """BUG (analysis, Phase 4): str.title() turns "don't" into "Don'T"."""
+        """Regression (analysis D4, fixed): per-word capitalize() keeps "Don't"."""
         self.assertEqual(scanner.guess_title("/x/don't.stop.mkv"), "Don't Stop")
 
 
@@ -51,10 +50,9 @@ class PosterTests(IsolatedCase):
         names = [os.path.basename(p) for p in scanner.find_posters(v)]
         self.assertEqual(names, ["film.jpg"])
 
-    @known_bug
     def test_front_cover_comes_before_back_cover(self):
-        """BUG (analysis, Phase 4): results are sorted alphabetically, so back.jpg
-        is returned first and becomes the movie's front poster."""
+        """Regression (analysis D3, fixed): find_posters ranks front-ish names
+        before back/rear artwork."""
         v = self.tmpfile("m/clip.mp4")
         self.tmpfile("m/front.jpg")
         self.tmpfile("m/back.jpg")

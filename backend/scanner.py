@@ -21,7 +21,10 @@ def walk(dirs: list) -> list[dict]:
         for root, _, files in os.walk(d):
             for f in files:
                 if os.path.splitext(f)[1].lower() in VIDEO_EXT:
-                    p = os.path.join(root, f)
+                    # normpath: a configured folder like "D:/video" would otherwise
+                    # yield mixed separators, and the exact-string compare in
+                    # is_imported() would then miss the already-imported copy.
+                    p = os.path.normpath(os.path.join(root, f))
                     try: size = os.path.getsize(p)
                     except OSError: size = 0
                     found.append({"path": p, "name": f, "size": size, "dir": root})
@@ -37,7 +40,8 @@ def guess_title(path: str) -> str:
         stem = ""  # splitext gotcha: '.mp4' parses as a dotfile with no extension
     base = stem.replace(".", " ").replace("_", " ").replace("-", " ")
     base = " ".join(w for w in base.split() if not _re_year(w))
-    return base.strip().title() or "Untitled"
+    # Per-word capitalize(): title() would turn "don't" into "Don'T" (bug D4).
+    return " ".join(w.capitalize() for w in base.split()) or "Untitled"
 
 def probe_duration(path: str) -> int | None:
     """Duration in minutes (int) via ffprobe, or None if unavailable."""
@@ -56,7 +60,7 @@ def guess_kind(path: str, duration_min: int | None = None) -> str:
     """Duration is the strongest signal (>=50 min = movie), then name keywords, then size."""
     p = path.lower()
     size_mb = 0
-    try: size_mb = os.path.getsize(p) / 1048576
+    try: size_mb = os.path.getsize(path) / 1048576   # real path: p is lowercased (bug D2)
     except OSError: pass
     if duration_min:
         return "movie" if duration_min >= 50 else "scene"
@@ -66,12 +70,23 @@ def guess_kind(path: str, duration_min: int | None = None) -> str:
     if size_mb and size_mb < 350: return "scene"
     return "scene"
 
+def _poster_rank(name: str) -> int:
+    """Sort key so the front cover wins: back artwork ('back', 'rear') sorts last,
+    front-ish names ('front', 'cover', 'poster', 'folder') first (bug D3)."""
+    low = name.lower()
+    if "back" in low or "rear" in low:
+        return 2
+    if any(k in low for k in ("front", "cover", "poster", "folder")):
+        return 0
+    return 1
+
+
 def find_posters(path: str) -> list[str]:
     d, base = os.path.split(path)
     stem = os.path.splitext(base)[0].lower()
     out = []
     try:
-        for f in sorted(os.listdir(d)):
+        for f in sorted(os.listdir(d), key=lambda n: (_poster_rank(n), n.lower())):
             low = f.lower()
             if not low.endswith(IMG_EXT): continue
             if (stem and stem in low) or any(k in low for k in ("cover", "front", "poster", "back", "thumb")):
@@ -80,19 +95,31 @@ def find_posters(path: str) -> list[str]:
         pass
     return out
 
+def _norm_path(path: str) -> str:
+    """Case/separator-insensitive path key: the same file reached via 'D:/video'
+    and 'D:\\video' (or different case on Windows) must compare equal (bug D1)."""
+    return os.path.normcase(os.path.normpath(path))
+
+
 def is_imported(path: str) -> bool:
-    return path in _state().get("done", [])
+    p = _norm_path(path)
+    return p in {_norm_path(x) for x in _state().get("done", [])}
 
 def mark_done(path: str) -> None:
     s = _state()
-    if path not in s.setdefault("done", []):
-        s["done"].append(path)
+    done = s.setdefault("done", [])
+    p = _norm_path(path)
+    if not any(_norm_path(x) == p for x in done):
+        done.append(path)              # stored as given (stable file format)
         _save_state(s)
 
 def remove_done(path: str) -> None:
     s = _state()
-    if path in s.get("done", []):
-        s["done"] = [p for p in s["done"] if p != path]
+    done = s.get("done", [])
+    p = _norm_path(path)
+    kept = [x for x in done if _norm_path(x) != p]
+    if kept != done:
+        s["done"] = kept
         _save_state(s)
 
 def _img_ref(path: str) -> str:
