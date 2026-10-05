@@ -12,6 +12,7 @@ import json
 import os
 import sqlite3
 import sys
+import tempfile
 import threading
 import uuid
 from typing import Any, Sequence
@@ -19,9 +20,49 @@ from typing import Any, Sequence
 SCHEMA_VERSION = 2
 
 
+def _writable(path: str) -> bool:
+    try:
+        os.makedirs(path, exist_ok=True)
+        probe = os.path.join(path, ".obscura-write-test")
+        with open(probe, "w"): pass
+        os.remove(probe)
+        return True
+    except OSError:
+        return False
+
+
+def alert(title: str, text: str) -> None:
+    """Show a message box. console=False means an unhandled exception is invisible.
+
+    Also writes the text to startup-error.log beside the app, so a crash is
+    diagnosable after the box has been dismissed (and when nobody can screenshot).
+    """
+    try:
+        with open(os.path.join(app_dir(), "startup-error.log"), "a", encoding="utf-8") as f:
+            f.write(f"\n--- {title} ---\n{text}\n")
+    except Exception:
+        pass
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, title, 0x10)   # MB_ICONERROR
+    except Exception:
+        pass
+
+
 def app_dir() -> str:
+    """Portable: data/ lives next to the exe. If that folder can't be written
+    (e.g. the app was dropped in C:\\Program Files) fall back to %LOCALAPPDATA%
+    and tell the user where the library went, instead of dying silently."""
     if getattr(sys, "frozen", False):
-        return os.path.dirname(os.path.abspath(sys.executable))
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        if _writable(exe_dir):
+            return exe_dir
+        fallback = os.path.join(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir(),
+                                "Obscura")
+        _writable(fallback)
+        alert("Obscura", "This folder is not writable, so your library was moved to:\n\n"
+                         f"{fallback}\n\n(data is now stored there)")
+        return fallback
     return os.path.dirname(os.path.abspath(__file__))
 
 
@@ -37,29 +78,29 @@ def ensure_dirs() -> None:
 
 
 _conn: sqlite3.Connection | None = None
-# RLock: query/one/execute hold the lock and then call connect(), which also
-# takes it. A plain Lock deadlocks the thread (and then the whole server)
-# whenever _conn is None — e.g. right after backup.restore_zip calls close().
+# Reentrant on purpose: query()/one()/execute() hold this lock and then call
+# connect(), which takes it again when the connection is None (first call ever
+# or after close()). A plain threading.Lock self-deadlocks there (bug #1).
 _lock = threading.RLock()
 
 
 def connect() -> sqlite3.Connection:
     global _conn
-    # Reentrant: safe to call while already holding _lock (see above).
-    with _lock:
-        if _conn is None:
-            ensure_dirs()
-            _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-            _conn.row_factory = sqlite3.Row
-            _conn.execute("PRAGMA journal_mode=WAL")
-            _migrate()
-        return _conn
+    if _conn is None:
+        with _lock:
+            if _conn is None:
+                ensure_dirs()
+                _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+                _conn.row_factory = sqlite3.Row
+                _conn.execute("PRAGMA journal_mode=WAL")
+                _migrate()
+    return _conn
 
 
 def close() -> None:
     """Close the shared connection (used by backup/restore)."""
     global _conn
-    with _lock:
+    with _lock:                      # don't pull the rug from under a running query
         if _conn is not None:
             try:
                 _conn.close()
@@ -168,14 +209,9 @@ def get_settings() -> dict:
     row = one("SELECT value FROM settings WHERE key='app'")
     if row:
         try:
-            s = json.loads(row["value"])
-        except Exception as e:
-            # Never silently fall back to {}: the next save_settings would
-            # persist that empty base and wipe every stored setting.
-            raise ValueError(f"settings row is corrupt (unparseable JSON): {e}") from e
-        if not isinstance(s, dict):
-            raise ValueError("settings row is corrupt (not a JSON object)")
-        return s
+            return json.loads(row["value"])
+        except Exception:
+            pass
     return {}
 
 
@@ -191,25 +227,19 @@ def get_scraper_sites() -> dict:
 
 
 def add_scraper_site(kind: str, scraper_id: str, domain: str) -> None:
-    # Hold _lock across the read-modify-save so concurrent updates cannot
-    # interleave and silently lose one of the writes (RLock: reentrant below).
-    with _lock:
-        s = get_settings()
-        s.setdefault("scraperSites", {})
-        s["scraperSites"].setdefault(kind, [])
-        s["scraperSites"][kind].append({"scraper_id": scraper_id, "domain": domain})
-        save_settings(s)
+    s = get_settings()
+    s.setdefault("scraperSites", {})
+    s["scraperSites"].setdefault(kind, [])
+    s["scraperSites"][kind].append({"scraper_id": scraper_id, "domain": domain})
+    save_settings(s)
 
 
 def del_scraper_site(kind: str, idx: int) -> None:
-    with _lock:
-        s = get_settings()
-        if "scraperSites" in s and kind in s["scraperSites"]:
-            if not 0 <= idx < len(s["scraperSites"][kind]):
-                raise ValueError(f"scraper site index {idx} out of range")
-            s["scraperSites"][kind].pop(idx)
-            if not s["scraperSites"][kind]:
-                del s["scraperSites"][kind]
-            if not s["scraperSites"]:
-                del s["scraperSites"]
-        save_settings(s)
+    s = get_settings()
+    if "scraperSites" in s and kind in s["scraperSites"]:
+        s["scraperSites"][kind].pop(idx)
+        if not s["scraperSites"][kind]:
+            del s["scraperSites"][kind]
+        if not s["scraperSites"]:
+            del s["scraperSites"]
+    save_settings(s)

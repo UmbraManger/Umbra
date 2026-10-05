@@ -4,7 +4,7 @@ import threading
 import unittest
 
 import db
-from .helpers import IsolatedCase, known_bug
+from .helpers import IsolatedCase
 
 
 class SchemaTests(IsolatedCase):
@@ -78,10 +78,9 @@ class SettingsTests(IsolatedCase):
 
 
 class KnownBugTests(IsolatedCase):
-    @known_bug
     def test_query_after_close_reconnects_instead_of_deadlocking(self):
-        """BUG (analysis #1, Phase 3): query() holds _lock, then connect() tries to
-        take the same non-reentrant lock when the connection was closed."""
+        """Regression (analysis #1, fixed): query() holds _lock, then connect()
+        re-acquires it — fine now that the lock is a reentrant RLock."""
         db.connect()
         db.close()
         result = []
