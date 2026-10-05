@@ -6,7 +6,7 @@ from unittest import mock
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 import crypto
-from .helpers import IsolatedCase, known_bug
+from .helpers import IsolatedCase
 
 PNG = b"\x89PNG\r\n\x1a\n" + bytes(range(256)) * 4
 
@@ -53,7 +53,8 @@ class ProtectedStorageTests(IsolatedCase):
 
     def test_setting_a_passphrase_turns_protection_on_and_unlocks(self):
         self.assertEqual(crypto.status(),
-                         {"on": True, "pass_set": True, "unlocked": True})
+                         {"on": True, "pass_set": True, "unlocked": True,
+                          "enc_count": 0})
 
     def test_protected_images_are_encrypted_on_disk_and_readable(self):
         img_id = crypto.store_image(PNG, "image/png")
@@ -106,18 +107,50 @@ class ProtectedStorageTests(IsolatedCase):
         with self.assertRaises(ValueError):
             crypto.set_passphrase("")
 
-    def test_encrypt_plaintext_requires_unlock_and_upgrades_plain_blobs(self):
+    def test_enabling_folds_plaintext_blobs_into_the_vault(self):
         crypto.set_enabled(False)
         plain_id = crypto.store_image(PNG, "image/png")      # stored as plaintext
         self.assertEqual(read(blob_file(plain_id)), PNG)
-        crypto.set_enabled(True)
+        crypto.set_enabled(True)                             # unlocked -> folded in
+        self.assertNotEqual(read(blob_file(plain_id)), PNG)
+        self.assertEqual(crypto.status()["enc_count"], 1)
         crypto._state["key"] = None
         with self.assertRaises(crypto.Locked):
             crypto.encrypt_plaintext()
         crypto.unlock(self.PW)
-        self.assertEqual(crypto.encrypt_plaintext(), 1)
-        self.assertNotEqual(read(blob_file(plain_id)), PNG)
+        self.assertEqual(crypto.encrypt_plaintext(), 0)      # nothing left to fold
         self.assertEqual(crypto.load_image(plain_id)[0], PNG)
+
+    def test_disabling_protection_decrypts_every_blob(self):
+        ids = [crypto.store_image(PNG + bytes([i]), "image/png") for i in range(2)]
+        crypto.set_enabled(False)
+        for i, img_id in enumerate(ids):
+            self.assertEqual(read(blob_file(img_id)), PNG + bytes([i]))   # plain on disk
+        crypto._state["key"] = None                          # survives a restart
+        for i, img_id in enumerate(ids):
+            self.assertEqual(crypto.load_image(img_id)[0], PNG + bytes([i]))
+        self.assertFalse(crypto.status()["on"])
+        self.assertEqual(crypto.status()["enc_count"], 0)
+
+    def test_disabling_while_locked_is_refused_and_flag_stays_on(self):
+        crypto.store_image(PNG, "image/png")
+        crypto._state["key"] = None
+        with self.assertRaises(crypto.Locked):
+            crypto.set_enabled(False)
+        self.assertTrue(crypto.status()["on"])               # flag untouched
+        self.assertEqual(crypto.status()["enc_count"], 1)
+
+    def test_unlock_repairs_a_vault_left_encrypted_while_protection_is_off(self):
+        # Regression: flag off + blobs still ciphertext = every image 423s with
+        # no prompt offered. Unlocking must decrypt them back to plaintext.
+        img_id = crypto.store_image(PNG, "image/png")
+        m = crypto._meta(); m["on"] = False; crypto._save_meta(m)
+        crypto._state["key"] = None
+        self.assertTrue(crypto.unlock(self.PW))
+        self.assertEqual(read(blob_file(img_id)), PNG)
+        self.assertEqual(crypto.status()["enc_count"], 0)
+        crypto._state["key"] = None                          # readable keyless
+        self.assertEqual(crypto.load_image(img_id), (PNG, "image/png"))
 
 
 class FirstPassphraseTests(IsolatedCase):
@@ -165,10 +198,9 @@ class RealKdfTests(IsolatedCase):
 
 
 class KnownBugTests(IsolatedCase):
-    @known_bug
     def test_failed_rekey_rolls_back_automatically(self):
-        """BUG (analysis #2, Phase 3): a failure midway through re-keying leaves some
-        blobs under the new key while imgprot.json still describes the old one."""
+        """Regression (analysis #2, fixed): a failure midway through re-keying
+        rolls every blob back so meta and blobs stay on the OLD key together."""
         crypto.set_passphrase("old pass")
         ids = [crypto.store_image(PNG + bytes([i]), "image/png") for i in range(2)]
         real, calls = os.replace, {"n": 0}

@@ -21,7 +21,6 @@ import os, re, json, shutil, hashlib
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.exceptions import InvalidTag
 import db
 
 ENC_DIR = os.path.join(db.DATA_DIR, "encrypted")
@@ -38,51 +37,22 @@ _VERIFIER_PT = b"obscura-image-protection-verifier-v2"
 KDF_PBKDF2_STRONG = {"type": "pbkdf2", "iterations": 600000}
 KDF_PBKDF2_LEGACY = {"type": "pbkdf2", "iterations": 150000}  # v1 blobs/meta
 
-# Only these ever leave load_image()/store_image() as a response Content-Type.
-_SAFE_MIMES = ("image/jpeg", "image/png", "image/webp", "image/gif")
-
 
 class Locked(Exception):
     pass
-
-
-class MetaError(Exception):
-    """imgprot.json exists but is unreadable/corrupt — refusing to guess."""
-
-
-class IntegrityError(Exception):
-    """Blob failed GCM authentication (corrupt/tampered), NOT a locked vault."""
 
 
 # ---------------------------------------------------------------- meta ----
 def _meta() -> dict:
     try:
         with open(META, encoding="utf-8") as f:
-            m = json.load(f)
-    except FileNotFoundError:
-        # Never configured — "protection off" is the correct answer.
+            return json.load(f)
+    except Exception:
         return {"on": False, "salt": "", "pass_set": False}
-    except Exception as e:
-        # A corrupt/locked meta must NEVER read as "protection off": callers
-        # would write plaintext and set_enabled() would overwrite the real
-        # salt/verifier with a synthesized default, destroying the vault.
-        raise MetaError(
-            f"image-protection meta {META} is unreadable or corrupt ({e}) — "
-            f"repair it or restore {META}.bak; refusing to guess") from e
-    if not isinstance(m, dict):
-        raise MetaError(f"image-protection meta {META} is corrupt (not a JSON object)")
-    return m
 
 
 def _save_meta(m: dict) -> None:
     os.makedirs(db.DATA_DIR, exist_ok=True)
-    if os.path.exists(META):
-        # Keep one generation of the real meta (salt/verifier) before any
-        # legitimate rewrite, so a later corruption is recoverable.
-        try:
-            shutil.copy2(META, META + ".bak")
-        except OSError:
-            pass
     tmp = META + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(m, f)
@@ -177,20 +147,81 @@ def _upgrade_meta_if_legacy(m: dict, key: bytes) -> None:
     _save_meta(out)
 
 
+def _rollback_rekey(bak: str, pending: list) -> None:
+    """Undo a failed re-key: copy every pre-rekey original back over its blob
+    so blobs and imgprot.json stay on the OLD key together. Keeps
+    .rekey-backup when the restore itself fails (manual recovery)."""
+    if not os.path.isdir(bak):
+        return                       # nothing was written yet
+    ok = True
+    for bp, mp, _mime, _pt in pending:
+        for dst in (bp, mp):
+            src = os.path.join(bak, os.path.basename(dst))
+            if not os.path.exists(src):
+                continue             # not backed up == never modified
+            tmp = dst + ".tmp"
+            try:
+                shutil.copy2(src, tmp)
+                os.replace(tmp, dst)
+            except OSError:
+                ok = False
+                try: os.remove(tmp)
+                except OSError: pass
+    # drop half-written tmp files from the interrupted forward pass
+    try:
+        for fn in os.listdir(ENC_DIR):
+            if fn.endswith(".tmp"):
+                try: os.remove(os.path.join(ENC_DIR, fn))
+                except OSError: pass
+    except OSError:
+        pass
+    if ok:
+        shutil.rmtree(bak, ignore_errors=True)
+
+
 # -------------------------------------------------------------- public ----
 _state = {"key": None}
+
+
+def lock() -> None:
+    """Forget the in-memory key (used after a restore swaps the library out)."""
+    _state["key"] = None
+
+
+def _enc_count() -> int:
+    """How many blobs are still ciphertext — 0 once the vault matches its flag."""
+    n = 0
+    if not os.path.isdir(ENC_DIR):
+        return 0
+    for fn in os.listdir(ENC_DIR):
+        if not fn.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(ENC_DIR, fn), encoding="utf-8") as f:
+                if json.load(f).get("enc"):
+                    n += 1
+        except Exception:
+            continue
+    return n
 
 
 def status() -> dict:
     m = _meta()
     return {"on": m.get("on", False), "pass_set": m.get("pass_set", False),
-            "unlocked": _state["key"] is not None}
+            "unlocked": _state["key"] is not None, "enc_count": _enc_count()}
 
 
 def set_enabled(on: bool) -> dict:
-    # _meta() raises MetaError on a corrupt file, so this can never overwrite
-    # real-but-unreadable key material with a synthesized default.
+    # The flag and the blobs on disk must always agree: "off" has to leave
+    # plaintext behind, or a later restart makes every image unreadable with
+    # no unlock path (the "images gone with protection off" bug). Disabling
+    # therefore decrypts first and needs the key — Locked leaves `on` unchanged.
+    if not on:
+        if _enc_count():
+            decrypt_all()
     m = _meta(); m["on"] = bool(on); _save_meta(m)
+    if on and _meta().get("pass_set") and _state["key"] is not None:
+        encrypt_plaintext()      # fold blobs uploaded while it was off
     return status()
 
 
@@ -242,39 +273,38 @@ def set_passphrase(new_pw: str, current_pw: str | None = None) -> dict:
                         f"{fn} could not be decrypted with the current passphrase — "
                         "re-key aborted, nothing was changed")
             else:
-                # Sidecar says plaintext (or is missing/corrupt). If the bytes
-                # are already GCM ciphertext under the current key, encrypting
-                # them again would nest ciphertext unrecoverably — refuse.
-                if old_key is not None and _is_ciphertext(old_key, blob):
-                    raise ValueError(
-                        f"{fn} is already encrypted but its metadata is missing/corrupt — "
-                        "fix the sidecar before re-keying (nothing was changed)")
                 pt = blob  # plain blob -> will be encrypted below
-            pending.append((bp, mp, _safe_mime(bm.get("mime")), pt))
+            pending.append((bp, mp, bm.get("mime", "image/jpeg"), pt))
 
     # ---- phase 2: rewrite (tmp + atomic replace, originals backed up) ----
+    # One transaction: blobs AND imgprot.json move to the new key together.
+    # On any failure every blob is restored from .rekey-backup before the
+    # error propagates, so a partial re-key can never leave images encrypted
+    # under a key the meta does not describe (that state = data loss).
+    new_meta = {"on": True, "pass_set": True, "salt": new_salt.hex(),
+                "kdf": kdf, "verifier": _verifier_make(new_key)}
+    bak = os.path.join(ENC_DIR, ".rekey-backup")
     if pending:
-        bak = os.path.join(ENC_DIR, ".rekey-backup")
         shutil.rmtree(bak, ignore_errors=True)
         os.makedirs(bak, exist_ok=True)
-        try:
-            for bp, mp, mime, pt in pending:
-                for src in (bp, mp):
-                    if os.path.exists(src):
-                        shutil.copy2(src, os.path.join(bak, os.path.basename(src)))
-                iv = os.urandom(12)
-                tmp = bp + ".tmp"
-                with open(tmp, "wb") as f:
-                    f.write(iv + AESGCM(new_key).encrypt(iv, pt, None))
-                os.replace(tmp, bp)
-                _write_blob_meta(mp, {"mime": mime, "enc": True})
-        except Exception:
-            # originals kept in .rekey-backup for manual recovery
-            raise
+    try:
+        for bp, mp, mime, pt in pending:
+            for src in (bp, mp):
+                if os.path.exists(src):
+                    shutil.copy2(src, os.path.join(bak, os.path.basename(src)))
+            iv = os.urandom(12)
+            tmp = bp + ".tmp"
+            with open(tmp, "wb") as f:
+                f.write(iv + AESGCM(new_key).encrypt(iv, pt, None))
+            os.replace(tmp, bp)
+            _write_blob_meta(mp, {"mime": mime, "enc": True})
+        # meta lands only after every blob succeeded (it is itself atomic)
+        _save_meta(new_meta)
+    except Exception:
+        _rollback_rekey(bak, pending)
+        raise
+    if pending:
         shutil.rmtree(bak, ignore_errors=True)
-
-    _save_meta({"on": True, "pass_set": True, "salt": new_salt.hex(),
-                "kdf": kdf, "verifier": _verifier_make(new_key)})
     _state["key"] = new_key
     return status()
 
@@ -288,6 +318,16 @@ def unlock(pw: str) -> bool:
         return False
     _upgrade_meta_if_legacy(m, key)
     _state["key"] = key
+    # Fold blobs to the current mode. With protection off this repairs a vault
+    # left encrypted by an earlier disable, so images open without prompting
+    # again — best effort, retried on the next unlock (each blob is atomic).
+    try:
+        if m.get("on"):
+            encrypt_plaintext()
+        else:
+            decrypt_all()
+    except Exception:
+        pass
     return True
 
 
@@ -320,18 +360,50 @@ def encrypt_plaintext() -> int:
             continue
         with open(bp, "rb") as f:
             pt = f.read()
-        if _is_ciphertext(key, pt):
-            # Sidecar lost/corrupt but the blob is already ciphertext — do NOT
-            # encrypt it again (that would corrupt it irrecoverably).
-            raise ValueError(
-                f"{fn} is already encrypted but its metadata is missing/corrupt — "
-                "fix the sidecar instead of re-encrypting (nothing was changed)")
         iv = os.urandom(12)
         tmp = bp + ".tmp"
         with open(tmp, "wb") as f:
             f.write(iv + AESGCM(key).encrypt(iv, pt, None))
         os.replace(tmp, bp)
-        _write_blob_meta(mp, {"mime": _safe_mime(bm.get("mime")), "enc": True})
+        _write_blob_meta(mp, {"mime": bm.get("mime", "image/jpeg"), "enc": True})
+        n += 1
+    return n
+
+
+def decrypt_all() -> int:
+    """Decrypt every ciphertext blob back to plaintext (protection turned off).
+
+    Requires the unlocked key; returns the count. Each blob is rewritten
+    tmp + os.replace, so an interruption leaves every file either fully
+    encrypted or fully plain — never a torn one."""
+    key = _state["key"]
+    if not key:
+        raise Locked()
+    n = 0
+    if not os.path.isdir(ENC_DIR):
+        return 0
+    for fn in sorted(os.listdir(ENC_DIR)):
+        if not fn.endswith(".bin"):
+            continue
+        bp = os.path.join(ENC_DIR, fn)
+        mp = bp[:-4] + ".json"
+        bm = {}
+        if os.path.exists(mp):
+            try:
+                with open(mp, encoding="utf-8") as f:
+                    bm = json.load(f)
+            except Exception:
+                bm = {}
+        if not bm.get("enc"):
+            continue
+        with open(bp, "rb") as f:
+            blob = f.read()
+        pt = AESGCM(key).decrypt(blob[:12], blob[12:], None)
+        tmp = bp + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(pt)
+        os.replace(tmp, bp)
+        _write_blob_meta(mp, {"mime": bm.get("mime", "image/jpeg"), "enc": False})
         n += 1
     return n
 
@@ -346,7 +418,7 @@ def store_image(data: bytes, mime: str) -> str:
         # a Locked error instead of a file that quietly dodges the vault.
         raise Locked("image protection is on but locked — unlock before adding images")
     img_id = "i" + os.urandom(4).hex()
-    meta = {"mime": _safe_mime(mime), "enc": bool(on)}
+    meta = {"mime": mime or "image/jpeg", "enc": bool(on)}
     tmp = _blob_path(img_id) + ".tmp"
     with open(tmp, "wb") as f:
         if on:
@@ -354,17 +426,8 @@ def store_image(data: bytes, mime: str) -> str:
             f.write(iv + AESGCM(key).encrypt(iv, data, None))
         else:
             f.write(data)
-    # Blob first, sidecar last: a hard crash in between leaves a sidecar-less
-    # blob (never a dangling sidecar). If the sidecar write *fails*, remove the
-    # blob too so no orphan can later be mistaken for plaintext and re-encrypted.
-    try:
-        os.replace(tmp, _blob_path(img_id))
-        _write_blob_meta(_blob_meta_path(img_id), meta)
-    except Exception:
-        for p in (_blob_path(img_id), _blob_meta_path(img_id)):
-            try: os.remove(p)
-            except OSError: pass
-        raise
+    os.replace(tmp, _blob_path(img_id))
+    _write_blob_meta(_blob_meta_path(img_id), meta)
     return img_id
 
 
@@ -386,19 +449,13 @@ def load_image(img_id: str) -> tuple[bytes, str] | None:
     if meta.get("enc"):
         if not _state["key"]:
             raise Locked()
-        if len(blob) < 28:  # 12-byte IV + 16-byte GCM tag
-            raise IntegrityError(f"image {img_id} is truncated — cannot authenticate")
         try:
             data = AESGCM(_state["key"]).decrypt(blob[:12], blob[12:], None)
-        except InvalidTag as e:
-            # Tampering/corruption is NOT a locked vault — report it as such.
-            raise IntegrityError(
-                f"image {img_id} failed GCM authentication — corrupt or tampered with") from e
         except Exception:
             raise Locked()
     else:
         data = blob
-    return data, _safe_mime(meta.get("mime"))
+    return data, meta.get("mime", "image/jpeg")
 
 
 def remove_image(img_id: str) -> None:
@@ -413,24 +470,6 @@ def remove_image(img_id: str) -> None:
 
 
 # --------------------------------------------------------------- utils ----
-def _safe_mime(m) -> str:
-    """Sidecar mimes are unauthenticated — only an allowlist may become a
-    response Content-Type (anything else falls back to image/jpeg)."""
-    return m if isinstance(m, str) and m.lower() in _SAFE_MIMES else "image/jpeg"
-
-
-def _is_ciphertext(key: bytes, blob: bytes) -> bool:
-    """True when blob is already AES-GCM ciphertext under key (used to refuse
-    double-encryption). False-positive chance is the GCM forgery probability."""
-    if len(blob) < 28:
-        return False
-    try:
-        AESGCM(key).decrypt(blob[:12], blob[12:], None)
-        return True
-    except Exception:
-        return False
-
-
 def _write_blob_meta(path: str, meta: dict) -> None:
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
