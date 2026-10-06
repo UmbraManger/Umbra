@@ -12,6 +12,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import uvicorn
 from server import app, API_TOKEN
 import db
+import crypto
+
+
+def _apply_startup_lock() -> None:
+    """If the previous session ended with the vault locked, refuse to serve
+    until the user unlocks — the dialog is the only way out."""
+    m = db.get_settings().get("lock") or {}
+    if m.get("on") and m.get("hash"):
+        crypto.set_locked(True)
 
 def find_port(start=8765) -> int:
     for p in range(start, start + 50):

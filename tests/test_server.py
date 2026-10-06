@@ -173,3 +173,78 @@ class KnownBugTests(ServerCase):
         self.client.put("/api/movies", headers=self.h,
                         json={"id": mid, "filePath": "/etc/hosts"})
         self.assertEqual(self.library()["movies"][0]["filePath"], real)
+
+class AppLockTests(ServerCase):
+    """Server-side app lock (P3): the flag lives in crypto, the middleware
+    answers 423 for data endpoints except the allowlist, and the passphrase
+    hash stays server-side (slow KDF) where the client can neither read nor
+    compare it."""
+
+    def tearDown(self):
+        # The lock flag is process-wide: clear it so one test's locked state
+        # never leaks into the next (IsolatedCase only resets storage).
+        self.srv.crypto.set_locked(False)
+        super().tearDown()
+
+    def test_lock_blocks_data_endpoints_and_reports_status(self):
+        self.srv.crypto.set_locked(True)
+        for path in ("/api/library", "/api/movies", "/api/settings",
+                     "/api/backup/settings", "/api/images/i00000000"):
+            self.assertEqual(self.client.get(path, headers=self.h).status_code, 423, path)
+        self.assertEqual(self.client.get("/api/ping", headers=self.h).status_code, 200)
+        st = self.client.get("/api/images/status", headers=self.h).json()
+        self.assertTrue(st["app_locked"])
+
+    def test_password_lifecycle_wrong_rejected_right_opens(self):
+        # first set: no stored hash yet -> any passphrase (>=4 chars) arms it
+        r = self.client.post("/api/lock", json={"passphrase": "secr3t"}, headers=self.h)
+        self.assertEqual(r.status_code, 200, r.text)
+        m = self.srv.db.get_settings().get("lock") or {}
+        self.assertTrue(m.get("hash") and m.get("on"))
+        # re-arm/change with a wrong proof is rejected
+        self.assertEqual(self.client.post("/api/lock", json={"passphrase": "nope"},
+                                          headers=self.h).status_code, 400)
+        # a restart re-locks from the stored flag (main.py's startup hook)
+        self.srv.crypto.set_locked(True)
+        self.assertEqual(self.client.post("/api/unlock", json={"passphrase": "nope"},
+                                          headers=self.h).status_code, 400)
+        self.assertTrue(self.srv.crypto.is_locked())
+        self.assertEqual(self.client.post("/api/unlock", json={"passphrase": "secr3t"},
+                                          headers=self.h).status_code, 200)
+        self.assertFalse(self.srv.crypto.is_locked())
+
+    def test_lock_survives_db_reconnect(self):
+        self.srv.crypto.set_locked(True)
+        self.srv.db.close()
+        self.srv.db.connect()
+        self.assertTrue(self.srv.crypto.is_locked())
+
+    def test_allowlisted_endpoints_answer_while_locked(self):
+        self.client.post("/api/lock", json={"passphrase": "secr3t"}, headers=self.h)
+        self.assertEqual(self.client.post("/api/lock/now", headers=self.h).status_code, 200)
+        self.assertTrue(self.srv.crypto.is_locked())
+        # unlock affordance + status keep working; even lock-now is refused
+        # while locked (not on the allowlist - no force-open via the API)
+        self.assertEqual(self.client.post("/api/lock/now", headers=self.h).status_code, 423)
+        self.assertEqual(self.client.post("/api/unlock", json={"passphrase": "secr3t"},
+                                          headers=self.h).status_code, 200)
+        self.assertEqual(self.client.get("/api/ping", headers=self.h).status_code, 200)
+
+    def test_settings_never_expose_or_lose_the_lock_hash(self):
+        self.client.post("/api/lock", json={"passphrase": "secr3t"}, headers=self.h)
+        # both settings reads are public views: no hash/salt/kdf ever leaves
+        lock = self.client.get("/api/settings", headers=self.h).json().get("lock") or {}
+        self.assertNotIn("hash", lock)
+        self.assertNotIn("salt", lock)
+        lib_lock = (self.client.get("/api/library", headers=self.h).json()
+                    .get("settings", {}).get("lock") or {})
+        self.assertNotIn("hash", lib_lock)
+        # a client-shaped PUT can disarm (`on`) but can never erase the record
+        r = self.client.put("/api/settings",
+                            json={"theme": "light", "lock": {"on": False}},
+                            headers=self.h)
+        self.assertEqual(r.status_code, 200, r.text)
+        m = self.srv.db.get_settings().get("lock") or {}
+        self.assertTrue(m.get("hash"), "settings PUT erased the lock record")
+        self.assertFalse(m.get("on"), "client disarm flag did not reach the store")
+

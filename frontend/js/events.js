@@ -666,15 +666,18 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
  else if(act==='lock-set'){
   (async()=>{
    const cur=$('#lk-cur'),p1=$('#lk-p1'),p2=$('#lk-p2');
-   if(settings.lock.hash){
-    if(!cur.value){cur.classList.add('err');toast('Enter Current Password','alert-triangle');return}
-    if(!(await passMatches(cur.value,settings.lock.hash))){cur.classList.add('err');toast('Wrong Current Password','alert-triangle');return}
+   if(settings.lock.pass_set){
+    if(!cur||!cur.value){cur&&cur.classList.add('err');toast('Enter Current Password','alert-triangle');return}
    }
    const np=p1.value;
    if(np.length<4){p1.classList.add('err');toast('Password Must Be At Least 4 Characters','alert-triangle');return}
    if(np!==p2.value){p2.classList.add('err');toast('Passwords Do Not Match','alert-triangle');return}
-   settings.lock.hash=await sha256(np);
-   settings.lock.on=true;saveSettings();
+   // Server-side now: the browser sends the passwords, never a hash. The
+   // backend derives (slow KDF) and compares; `current` proves the change.
+   const r=await fetch('/api/lock',{method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({passphrase:np,current:(cur&&cur.value)?cur.value:undefined})});
+   if(!r.ok){const j=await r.json().catch(()=>({}));toast(j.detail||'Password Rejected By Backend','alert-triangle');return}
+   settings.lock={on:true,pass_set:true};saveSettings();
    renderSettings();icons();
    toast('Password Saved - App Lock Enabled','key-round');
   })();
@@ -822,7 +825,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   $('#gl-sz-large')?.classList.toggle('primary',a.dataset.v==='large');
   saveSettings();
  }
- else if(act==='lock-now'){lockApp()}
+ else if(act==='lock-now'){fetch('/api/lock/now',{method:'POST'}).then(r=>{if(r.ok)lockApp()}).catch(()=>{})}
  else if(act==='reveal'){
   const v=state.view;
   if(Sync.on&&v.name==='detail'&&(v.kind==='movie'||v.kind==='scene')){

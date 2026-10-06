@@ -34,6 +34,40 @@ $('#main').addEventListener('click',e=>{const chk=e.target.closest('[data-bulk-i
 recoverInterruptedRekey();
 render();
 if(settings.imgProt&&settings.imgProt.on)hydrateEncImages(document);
-if(settings.lock.on)lockApp();
+lockApp();
 document.body.dataset.booted='1';
+async function lockApp(){
+  const root=$('#lock-root');
+  const r=await fetch('/api/images/status').catch(()=>null);
+  if(!r||!r.ok)return;
+  const j=await r.json();
+  // Server truth, not the client flag: while locked every data fetch 423s, so
+  // a stale localStorage copy must not be able to skip this dialog. When the
+  // app is NOT locked, hand off to the image-vault prompt (it was deferred
+  // behind this screen) so entry never stacks two password prompts at once.
+  if(!j.app_locked){Sync.checkImageLock();return;}
+  root.classList.add('show');
+  const panel=`<div class="lockcard">
+   <div class="bmark"><i data-lucide="lock"></i></div>
+   <h1>App Locked</h1>
+   <div class="mono">Passphrase required to continue</div>
+   <input id="lock-pass" class="field" type="password" placeholder="Passphrase" autocomplete="off" style="width:100%;box-sizing:border-box;margin-top:14px;padding:10px 12px;font-size:14px">
+   <div class="lockerr" id="lock-err"></div>
+   <button id="lock-unlock" class="btn primary" style="margin-top:18px;width:100%">Unlock</button>
+  </div>`;
+  root.innerHTML=panel;
+  $('#lock-pass').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('lock-unlock').click()});
+  $('#lock-unlock').addEventListener('click',async()=>{
+   const pass=$('#lock-pass').value;
+   const r=await fetch('/api/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({passphrase:pass})});
+   const j=await r.json().catch(()=>({}));
+   if(r.ok&&!j.locked){root.classList.remove('show');toast('Unlocked - app resumed','lock-open');location.reload();}
+   else if(j.locked){$('#lock-err').textContent='Set a passphrase in Settings first';}
+   else{$('#lock-err').textContent=j.detail||'Wrong passphrase';}
+   $('#lock-pass').value='';$('#lock-pass').focus();$('#lock-root').classList.add('shake');
+  });
+  $('#lock-pass').focus();
+}
+
+
 Sync.init();

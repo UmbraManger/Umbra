@@ -44,37 +44,6 @@ function renderAbout(){
  }));
 }
 
-/* ===== LOCK SCREEN ===== */
-function lockApp(){
- if(!settings.lock.on)return;
- const root=$('#lock-root');
- root.innerHTML=`<div class="lockcard" id="lockcard">
-  <span class="bmark"><i data-lucide="lock"></i></span>
-  <h1>Obscura Is Locked</h1>
-  <div class="mono">Enter Your Password To Continue</div>
-  <input class="field" id="lk-unlock" type="password" placeholder="Password" style="text-align:center">
-  <div class="lockerr" id="lk-err"></div>
-  <button class="btn primary" id="lk-go" style="width:100%;justify-content:center;margin-top:4px"><i data-lucide="unlock"></i>Unlock</button>
- </div>`;
- root.classList.add('show');
- icons();
- const inp=$('#lk-unlock');
- inp.focus();
- const attempt=async()=>{
-   if(await passMatches(inp.value,settings.lock.hash)){
-    root.classList.remove('show');root.innerHTML='';
-    toast('Welcome Back','aperture');
-    Sync.checkImageLock();   // image vault prompt was deferred behind this lock
-   }else{
-   $('#lk-err').textContent='Wrong Password - Try Again';
-   const c=$('#lockcard');c.classList.remove('shake');void c.offsetWidth;c.classList.add('shake');
-   inp.select();
-  }
- };
- $('#lk-go').addEventListener('click',attempt);
- inp.addEventListener('keydown',e=>{if(e.key==='Enter')attempt()});
-}
-
 /* ===== DRAWER ===== */
 function closeDrawer(){$('#drawer-root').innerHTML=''}
 function openDrawer({title,sub,body,onMount,onSave}){

@@ -54,7 +54,7 @@ class ProtectedStorageTests(IsolatedCase):
     def test_setting_a_passphrase_turns_protection_on_and_unlocks(self):
         self.assertEqual(crypto.status(),
                          {"on": True, "pass_set": True, "unlocked": True,
-                          "enc_count": 0})
+                          "enc_count": 0, "app_locked": False})
 
     def test_protected_images_are_encrypted_on_disk_and_readable(self):
         img_id = crypto.store_image(PNG, "image/png")

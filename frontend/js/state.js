@@ -34,7 +34,7 @@ const DEF_SETTINGS={
   scrapers:[],pyScrapers:false,
   proxy:{on:false,proto:'http',host:'',port:'',auth:false,user:'',pass:''},
   ai:{on:false,provider:'openai',endpoint:'https://api.openai.com/v1',model:'gpt-4o-mini',key:''},
-  lock:{on:false,hash:''},
+  lock:{on:false},
   imgProt:{on:false,salt:'',hash:''},
   screenshot:{scale:2,format:'png',quality:92,watermark:true,pageLabel:true,autoDownload:false},
   gallery:{count:12},

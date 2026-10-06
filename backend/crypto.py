@@ -182,6 +182,20 @@ def _rollback_rekey(bak: str, pending: list) -> None:
 # -------------------------------------------------------------- public ----
 _state = {"key": None}
 
+# App lock (P3) — a process-wide flag enforced by SecurityMiddleware. It is
+# deliberately NOT persisted here: main.py re-derives it from the stored
+# settings.lock record on every boot, and only /api/unlock clears it.
+_app_locked = False
+
+
+def set_locked(v: bool) -> None:
+    global _app_locked
+    _app_locked = bool(v)
+
+
+def is_locked() -> bool:
+    return _app_locked
+
 
 def lock() -> None:
     """Forget the in-memory key (used after a restore swaps the library out)."""
@@ -208,7 +222,8 @@ def _enc_count() -> int:
 def status() -> dict:
     m = _meta()
     return {"on": m.get("on", False), "pass_set": m.get("pass_set", False),
-            "unlocked": _state["key"] is not None, "enc_count": _enc_count()}
+            "unlocked": _state["key"] is not None, "enc_count": _enc_count(),
+            "app_locked": _app_locked}
 
 
 def set_enabled(on: bool) -> dict:

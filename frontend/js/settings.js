@@ -149,17 +149,17 @@ function renderSettings(){
   <div class="ssec"><div class="shead"><i data-lucide="lock"></i><h2>Password Protection</h2><span class="mono">App Lock</span></div>
    <div class="setline"><span>Enable App Lock</span><label class="switch"><input type="checkbox" id="lk-on" ${lk.on?'checked':''}><span class="knob"></span></label></div>
    <div style="max-width:520px">
-    ${lk.hash?'<div style="margin-bottom:10px"><label class="flab">Current Password</label><input class="field" id="lk-cur" type="password" placeholder="Required To Change Or Disable"></div>':''}
+    ${lk.pass_set?'<div style="margin-bottom:10px"><label class="flab">Current Password</label><input class="field" id="lk-cur" type="password" placeholder="Required To Change Or Disable"></div>':''}
     <div class="frow" style="max-width:none">
-     <div><label class="flab">${lk.hash?'New Password':'Password'}</label><input class="field" id="lk-p1" type="password" placeholder="Min 4 Characters"></div>
+     <div><label class="flab">${lk.pass_set?'New Password':'Password'}</label><input class="field" id="lk-p1" type="password" placeholder="Min 4 Characters"></div>
      <div><label class="flab">Confirm Password</label><input class="field" id="lk-p2" type="password" placeholder="Repeat Password"></div>
     </div>
    </div>
    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-    <button class="btn primary" data-action="lock-set"><i data-lucide="key-round"></i>${lk.hash?'Change Password':'Set Password'}</button>
+    <button class="btn primary" data-action="lock-set"><i data-lucide="key-round"></i>${lk.pass_set?'Change Password':'Set Password'}</button>
     <button class="btn" data-action="lock-now" ${lk.on?'':'disabled'}><i data-lucide="lock"></i>Lock Now</button>
    </div>
-   <p class="note" style="margin-top:12px">When Enabled, The Lock Screen Appears Every Time The App Starts. The Password Is Stored As A SHA-256 Hash - Never In Plain Text.</p></div>
+   <p class="note" style="margin-top:12px">When Enabled, The Lock Screen Appears Every Time The App Starts. The Password Is Verified By The Server With A Slow Key Derivation Function - The Browser Never Stores Or Checks It.</p></div>
   <div class="ssec"><div class="shead"><i data-lucide="shield"></i><h2>Image Protection</h2><span class="mono">Posters & Covers</span></div>
    <div class="setline"><span>Enable Image Protection</span><label class="switch"><input type="checkbox" id="ip-on" ${ip.on?'checked':''}><span class="knob"></span></label></div>
    <div style="max-width:520px">
@@ -260,18 +260,19 @@ function renderSettings(){
  prov.addEventListener('change',()=>{$('#ai-endpoint').value=AI_PROVIDERS[prov.value][1]});
  $('#px-on').addEventListener('change',e=>{settings.proxy.on=e.target.checked;saveSettings()});
  $('#px-auth').addEventListener('change',e=>{settings.proxy.auth=e.target.checked;saveSettings();$('#px-authrow').style.display=e.target.checked?'':'none'});
- $('#lk-on').addEventListener('change',async e=>{
-  const on=e.target.checked;
-  if(on){
-   if(!settings.lock.hash){e.target.checked=false;toast('Set A Password First','alert-triangle');$('#lk-p1').focus();return}
-   settings.lock.on=true;saveSettings();toast('App Lock Enabled - Active On Next Start','lock');
-  }else{
-   const cur=$('#lk-cur');
-   if(!cur||!cur.value){e.target.checked=true;toast('Enter Current Password To Disable','alert-triangle');cur&&cur.focus();return}
-   if(!(await passMatches(cur.value,settings.lock.hash))){e.target.checked=true;toast('Wrong Current Password','alert-triangle');cur.classList.add('err');return}
-   settings.lock.on=false;saveSettings();toast('App Lock Disabled','lock-open');
-  }
- });
+  $('#lk-on').addEventListener('change',async e=>{
+   const on=e.target.checked;
+   if(on){
+    if(!settings.lock.pass_set){e.target.checked=false;toast('Set A Password First','alert-triangle');const p=$('#lk-p1');p&&p.focus();return}
+    settings.lock.on=true;saveSettings();toast('App Lock Enabled - Active On Next Start','lock');
+   }else{
+    const cur=$('#lk-cur');
+    if(!cur||!cur.value){e.target.checked=true;toast('Enter Current Password To Disable','alert-triangle');cur&&cur.focus();return}
+    const r=await fetch('/api/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({passphrase:cur.value})});
+    if(!r.ok){const j=await r.json().catch(()=>({}));e.target.checked=true;toast(j.detail||'Wrong Current Password','alert-triangle');cur.classList.add('err');return}
+    settings.lock.on=false;saveSettings();toast('App Lock Disabled','lock-open');
+   }
+  });
  $('#ip-on').addEventListener('change',async e=>{
   const on=e.target.checked;
   if(Sync.on){

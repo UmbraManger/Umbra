@@ -13,6 +13,7 @@ import requests
 import cloudscraper
 
 import db, crypto, keystore, backup as backup_engine
+from crypto import set_locked, is_locked   # app-lock state (P3)
 from net_guard import safe_image_url, safe_get
 
 # cloudscraper session for downloading images from Cloudflare-protected sites
@@ -46,6 +47,16 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if not path.startswith("/api/"):
             return await call_next(request)
+        # The app lock is enforced server-side: when the vault is locked, every
+        # data endpoint answers 423 Locked except the allowlist below (the
+        # unlock affordance, status and set/unset endpoints must keep working
+        # so the dialog can open and the frontend can never force-open itself).
+        if is_locked():
+            if path in ("/api/ping", "/api/images/unlock", "/api/images/status",
+                        "/api/lock", "/api/unlock"):
+                return await call_next(request)
+            return JSONResponse({"detail": "locked — unlock with the passphrase in Settings"},
+                                status_code=423)
         host_hdr = (request.headers.get("host") or "").lower()
         if host_hdr.split(":")[0].strip("[]") not in _LOCAL_HOSTS:
             return JSONResponse({"detail": "forbidden"}, status_code=403)
@@ -148,7 +159,7 @@ def library():
     for kind, table in TABLES.items():
         rows = db.query(f"SELECT * FROM {table} ORDER BY {ORDER[kind]}")
         lib[kind] = [_from_db(kind, r) for r in rows]
-    lib["settings"] = db.get_settings()
+    lib["settings"] = _public_settings()
     return lib
 
 def _save_one(kind: str, data: dict, create: bool) -> str:
@@ -230,8 +241,20 @@ for _kind in TABLES:
     _register_crud(_kind)
 
 # ---- settings ----
+def _public_settings() -> dict:
+    """Settings as the client may see them: the app-lock hash/salt/kdf never
+    leave the server — the client must not hold or compare them."""
+    s = db.get_settings()
+    lock = s.get("lock")
+    if isinstance(lock, dict) and (lock.get("hash") or lock.get("salt")):
+        s = dict(s)
+        s["lock"] = {k: v for k, v in lock.items()
+                     if k not in ("hash", "salt", "kdf")}
+    return s
+
+
 @app.get("/api/settings")
-def get_settings(): return db.get_settings()
+def get_settings(): return _public_settings()
 
 @app.put("/api/settings")
 def put_settings(body: dict = Body(...)):
@@ -249,6 +272,15 @@ def put_settings(body: dict = Body(...)):
             if existing_key:
                 ai = dict(ai); ai["key"] = existing_key
                 body["ai"] = ai
+    # The app-lock record's secrets belong to the server: a client-shaped PUT
+    # may flip `on` (the settings toggle disarms that way) but can never carry
+    # or erase hash/salt/kdf/pass_set.
+    stored_lock = (db.get_settings().get("lock") or {})
+    if stored_lock.get("hash"):
+        body["lock"] = {**(body.get("lock") or {}),
+                        **{k: stored_lock[k]
+                           for k in ("hash", "salt", "kdf", "pass_set")
+                           if k in stored_lock}}
     db.save_settings(body)
     return {"ok": True}
 
@@ -291,6 +323,62 @@ def img_enabled(body: dict = Body(...)):
 def img_unlock(b: PassBody):
     if not crypto.unlock(b.passphrase): raise HTTPException(400, "wrong passphrase")
     return {"unlocked": True}
+
+
+# ---- app lock (server-side) ----
+
+@app.post("/api/lock")
+def lock_app(b: PassBody):
+    """Arm the app lock and store its passphrase hash server-side (salt + slow
+    KDF params + derived key — never a fast hash, never client-held). When a
+    hash already exists the request must prove knowledge of it: `current`
+    (password change) or a `passphrase` equal to the stored one (re-arm)."""
+    if len(b.passphrase) < 4:
+        raise HTTPException(400, "passphrase must be at least 4 characters")
+    s = db.get_settings()
+    m = s.get("lock") or {}
+    if m.get("hash"):
+        probe = b.current if b.current is not None else b.passphrase
+        salt = bytes.fromhex(m.get("salt") or "")
+        key = crypto._derive(probe, salt, m.get("kdf") or crypto._best_kdf())
+        if key != bytes.fromhex(m["hash"]):
+            raise HTTPException(400, "wrong passphrase")
+    new_salt = os.urandom(16).hex()
+    kdf = crypto._best_kdf()
+    new_hash = crypto._derive(b.passphrase, bytes.fromhex(new_salt), kdf).hex()
+    s["lock"] = {**m, "hash": new_hash, "salt": new_salt, "kdf": kdf,
+                 "pass_set": True, "on": True}
+    db.save_settings(s)          # read-modify-write: keep every other setting
+    return {"armed": True}
+
+
+@app.post("/api/lock/now")
+def lock_now():
+    """Lock this session immediately (no passphrase: the caller is already
+    inside the unlocked app; this only raises the in-memory flag)."""
+    if not (db.get_settings().get("lock") or {}).get("hash"):
+        raise HTTPException(400, "set a password first")
+    set_locked(True)
+    return {"locked": True}
+
+
+@app.post("/api/unlock")
+def unlock_app(b: PassBody):
+    """Unlock this session. The passphrase is verified against the stored
+    derived hash - the client can no longer hold or compare the hash itself.
+    The record stays armed for the next start (disarm via the settings PUT)."""
+    m = db.get_settings().get("lock") or {}
+    if not m.get("hash"):
+        return JSONResponse({"locked": True}, status_code=200)
+    salt = bytes.fromhex(m.get("salt") or "")
+    key = crypto._derive(b.passphrase, salt, m.get("kdf") or crypto._best_kdf())
+    if key != bytes.fromhex(m["hash"]):
+        raise HTTPException(400, "wrong passphrase")
+    set_locked(False)
+    return {"unlocked": True}
+
+
+
 
 @app.post("/api/images")
 async def image_upload(file: UploadFile = File(...)):
