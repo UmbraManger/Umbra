@@ -612,12 +612,18 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
     }
    }catch(e){}
    const doRestore=async(pw)=>{
+    const btn=document.getElementById('bk-rst');
+    const busy=(on)=>{if(!btn)return;btn.disabled=on;if(on){toast('Restoring...','wait');btn.querySelector('i').style.display='none'}};
+    try{
     const fd=new FormData();fd.append('file',f);fd.append('confirm','RESTORE');
     if(pw)fd.append('passphrase',pw);
     const r=await fetch('/api/backup/restore',{method:'POST',body:fd});
     if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||('HTTP '+r.status))}
     closeModal();toast('Backup Restored - Reloading...','history');
     setTimeout(()=>location.reload(),900);
+    }finally{
+    busy(false);
+    }
    };
    openModal([{title:'Restore Backup',html:()=>`
     <div class="cmsg" style="margin-bottom:12px">Restoring <b>"${esc(f.name)}"</b> Replaces The Current Library, Images, Scrapers And Settings With The Backup Contents. This Cannot Be Undone. Continue?</div>`,
