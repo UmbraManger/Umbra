@@ -5,7 +5,10 @@ server dependencies such as cloudscraper) are not installed:
 """
 import importlib
 import os
+import tempfile
+import threading
 import unittest
+import zipfile
 
 try:
     from fastapi.testclient import TestClient
@@ -104,6 +107,39 @@ class DestructiveEndpointTests(ServerCase):
         r = self.client.post("/api/wipe", json={"confirm": "DELETE MY LIBRARY"}, headers=self.h)
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(self.library()["movies"], [])
+
+    def test_restore_does_not_block_the_event_loop(self):
+        """RESTORE must run off the event loop: /api/ping must answer while the
+        restore is still running in a worker thread."""
+        with tempfile.TemporaryDirectory() as d:
+            zip_path = os.path.join(d, "b.zip")
+            with zipfile.ZipFile(zip_path, "w") as z:
+                z.writestr("obscura.db", b"dummy-library")
+                z.writestr("settings.json", b"{}")
+            with open(zip_path, "rb") as fh:
+                files = {"file": ("b.zip", fh, "application/zip")}
+                worker = threading.Thread(
+                    target=self.client.post,
+                    args=["/api/backup/restore"],
+                    kwargs={"data": {"confirm": "RESTORE"}, "files": files, "headers": self.h},
+                    daemon=True)
+                worker.start()
+                ping = self.client.get("/api/ping", headers=self.h)
+                self.assertEqual(ping.status_code, 200, ping.text)
+                worker.join(timeout=10)
+                self.assertFalse(worker.is_alive(), "restore still running after the ping timeout")
+
+    def test_restore_rejects_oversized_content_length(self):
+        """A request declaring Content-Length over the cap must be refused before
+        any byte of the body is read."""
+        big = {"file": ("b.zip", b"x" * (50 * 1024 * 1024 + 1), "application/zip")}
+        r = self.client.post(
+            "/api/backup/restore",
+            headers=self.h,
+            data={"confirm": "RESTORE"},
+            files=big,
+        )
+        self.assertEqual(r.status_code, 413, r.text)
 
 
 class KnownBugTests(ServerCase):

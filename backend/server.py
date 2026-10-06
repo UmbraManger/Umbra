@@ -6,6 +6,8 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Body, Reques
 from fastapi.responses import Response, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.concurrency import run_in_threadpool
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel
 import requests
 import cloudscraper
@@ -798,17 +800,23 @@ def wipe_all(body: dict = Body(default={})):
 # ---- backup / restore ----
 @app.get("/api/backup/export")
 def backup_export():
+    # Intentionally sync / threadpooled: the export is an O(n) file-archive
+    # walk over the library. Offloading to a thread would only add a thread
+    # hop with no benefit — never change this back to a blocking async def.
     data = backup_engine.export_zip()
     stamp = time.strftime("%Y%m%d-%H%M")
     return Response(content=data, media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="Obscura-Backup-{stamp}.zip"'})
 
 @app.post("/api/backup/restore")
-async def backup_restore(file: UploadFile = File(...), confirm: str = Form("")):
+async def backup_restore(request: Request, file: UploadFile = File(...), confirm: str = Form("")):
     if confirm != "RESTORE":
         raise HTTPException(400, 'confirmation required: send form field confirm="RESTORE"')
+    # 413 on oversized archives before we read a single byte.
+    if int(request.headers.get("content-length") or 0) > 50 * 1024 * 1024:
+        raise HTTPException(413, "restore archive limited to 50 MB")
     data = await file.read()
-    try: n = backup_engine.restore_zip(data)
+    try: n = await run_in_threadpool(backup_engine.restore_zip, data)
     except ValueError as e: raise HTTPException(400, str(e))
     except Exception as e: raise HTTPException(500, f"restore failed: {e}")
     return {"ok": True, "entries": n}
