@@ -66,9 +66,9 @@ already been fixed in the working tree. The real risk has moved from "unfixed bu
 | 4 | ~~`Obscura.spec` points at `main.py` in the wrong directory — no build script~~ **RESOLVED in working tree** (spec moved to `backend/`, `build.bat` added, build completes); remaining: done criteria 2-4 unverified | High | [P0-DESKTOP](P0-DESKTOP-portable-native-app.md) |
 | 5 | `run_yaml` fetches a scraper-supplied URL with **no SSRF guard** | High | [P1](P1-yaml-scraper-ssrf.md) |
 | 6 | `_safe_image_url` is TOCTOU-vulnerable (resolve-then-fetch) | Medium | [P2](P2-ssrf-dns-rebinding.md) |
-| 7 | App lock is **client-side only**; hash in `localStorage`, no backend check | Medium | [P3](P3-app-lock-is-client-side.md) |
-| 8 | `restore` is `async def` doing blocking I/O — freezes the whole server | Medium | [P4](P4-restore-blocks-event-loop.md) |
-| 9 | `/api/wipe` leaves `obscura.db.prev`, `posters/`, and free pages | Medium | [P5](P5-wipe-residue.md) |
+| 7 | ~~App lock is **client-side only**; hash in `localStorage`, no backend check~~ **RESOLVED** — Option A shipped: server-side flag, 423 middleware, `/api/lock` + `/api/unlock` verify with a slow KDF | Medium | [P3](P3-app-lock-is-client-side.md) |
+| 8 | ~~`restore` is `async def` doing blocking I/O — freezes the whole server~~ **RESOLVED** — restore runs in a threadpool, 413 before reading oversized bodies | Medium | [P4](P4-restore-blocks-event-loop.md) |
+| 9 | ~~`/api/wipe` leaves `obscura.db.prev`, `posters/`, and free pages~~ **RESOLVED** — wipe removes residue and `VACUUM`s | Medium | [P5](P5-wipe-residue.md) |
 | 10 | Frontend has zero automated tests despite being ~350 KB of JS | Medium | [P6](P6-frontend-test-harness.md) |
 | 11 | 86 MB of `*_dbg` PyInstaller output untracked and unignored; 4 dead files ship in the release bundle | High | [P7](P7-build-artifacts-and-bundle-junk.md) |
 
@@ -98,11 +98,11 @@ Two plans touch `db.py` and must not run concurrently: **P0-DESKTOP Step 3** (wr
 | [P7](P7-build-artifacts-and-bundle-junk.md) — build artifacts & bundle junk | **DONE** — merged into master (`152df81`), 4 junk files deleted, ignore rules active |
 | [P0-DESKTOP](P0-DESKTOP-portable-native-app.md) — portable native app | **DONE (verified 2026-10-05)** — criteria 1-5 all re-checked by the reviewer: clean build, runs from `%TEMP%\obscura-portable` (native window + WebView2 + HTTP 403 + 24 scrapers installed), fails legibly (modal box + `startup-error.log`), recreates `data\`, suite `Ran 90 OK (5 skipped)`. Remaining MANUAL eyeball: user opens `%TEMP%\obscura-portable\Obscura.exe`, confirms window renders + one live lookup; optional Step 5 (tkinter→native dialogs) declined as out of scope |
 | [P0](P0-repo-hygiene.md) — repo hygiene | **DONE except Step 6** — 10 themed commits + merge, clean tree, 24 scrapers tracked, `requirements.lock.txt` present, fresh clone runs `90 OK (5 skipped)` (reviewer-verified). Outstanding: rewrite `backend/PATCHES.md` + `PHASE0.md` (still cite nonexistent tests) |
-| [P1](P1-yaml-scraper-ssrf.md) — yaml scraper SSRF | **DONE (branch `executor-p1`, commit `54bb8e3`, awaiting merge)** — reviewer-verified: `run_yaml` guarded, `net_guard.py` hosts `safe_image_url`, 8 new tests, my re-run `Ran 98 OK (5 skipped)` |
-| [P2](P2-ssrf-dns-rebinding.md) — DNS rebinding / redirects | **DONE (branch `executor-p2`, commit `3cd5a87`, stacked on `executor-p1`, awaiting merge)** — `safe_get` re-validates every hop + blocks https→http downgrade; TOCTOU documented as residual (no IP pinning, per plan); 4 new tests; my re-run `Ran 102 OK (5 skipped)` |
-| [P3](P3-app-lock-is-client-side.md) — app lock | TODO (confirmed open: lock screen in `ui.js:47`, no backend check) |
-| [P4](P4-restore-blocks-event-loop.md) — restore event loop | TODO (confirmed open: `server.py:831` `async def` calls blocking `backup.restore_zip`) |
-| [P5](P5-wipe-residue.md) — wipe residue | TODO (confirmed open: `server.py:798-820` no `POSTER_DIR`, no `.prev`, no `VACUUM`) |
+| [P1](P1-yaml-scraper-ssrf.md) — yaml scraper SSRF | **DONE** — merged into master (`54bb8e3`): `run_yaml` guarded, `net_guard.py` hosts `safe_image_url`, 8 new tests |
+| [P2](P2-ssrf-dns-rebinding.md) — DNS rebinding / redirects | **DONE** — merged into master (`3cd5a87`, stacked on P1's helper): `safe_get` re-validates every hop + blocks https→http downgrade; TOCTOU documented as residual (no IP pinning, per plan); 4 new tests |
+| [P3](P3-app-lock-is-client-side.md) — app lock | **DONE** — Option A shipped server-side: `crypto.set_locked/is_locked` flag, `SecurityMiddleware` answers 423 for every data endpoint except `/api/ping`, `/api/images/unlock`, `/api/images/status`, `/api/lock`, `/api/unlock`; `POST /api/lock` arms (salt + Argon2id/PBKDF2 params, `current` proves a change), `POST /api/unlock` verifies and clears the session flag (record stays armed for next boot), `POST /api/lock/now` locks the live session, `main.py` re-locks on boot from `settings.lock.on && hash`; settings reads expose only `on/pass_set` and a client PUT can never carry or erase hash/salt/kdf; the old `ui.js` screen, the `events.js` sha256 path and `settings.lock.hash` are gone; 5 new tests |
+| [P4](P4-restore-blocks-event-loop.md) — restore event loop | **DONE** — committed (`21742cc`): restore runs via `run_in_threadpool`, `Content-Length > 50 MB` refused with 413 before any body byte is read; tests assert `/api/ping` answers while a restore is in flight |
+| [P5](P5-wipe-residue.md) — wipe residue | **DONE** — committed (`9aacd5d`): wipe removes `obscura.db.prev`, `posters/`, WAL/journal and `VACUUM`s; residue test green |
 | [P6](P6-frontend-test-harness.md) — frontend tests | TODO (no `package.json` yet) |
 
 Status legend: TODO · PARTIAL (some steps verified done) · DONE · BLOCKED — executors may

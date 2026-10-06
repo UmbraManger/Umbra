@@ -2,6 +2,26 @@
 
 **Severity:** Medium · **Effort:** Medium · **Depends on:** nothing
 
+**Status: DONE (Option A shipped, 2026-10-06).** Server-side, as specified below:
+`crypto.set_locked()/is_locked()` hold the process flag and `crypto.status()` reports it
+as `app_locked`; `SecurityMiddleware` answers **423** for every data endpoint except the
+allowlist (`/api/ping`, `/api/images/unlock`, `/api/images/status`, `/api/lock`,
+`/api/unlock`); `POST /api/lock` arms and stores salt + KDF params + derived key via
+`crypto._derive` (slow, Argon2id/PBKDF2 — `current` proves a password change), `POST
+/api/unlock` verifies and clears the session flag while the record stays armed for the
+next boot, `POST /api/lock/now` locks the live session; `main.py` re-locks on startup
+from `settings.lock.on && hash`. Settings reads (`GET /api/settings` and the
+`/api/library` embed) expose only `on/pass_set`, and a client-shaped
+`PUT /api/settings` may flip `on` but can never carry or erase hash/salt/kdf — so the
+client holds no hash and cannot force-open itself. The old `ui.js` lock screen, the
+`events.js` sha256 path and the `settings.lock.hash` field were deleted. Two
+deviations from the sketch below, both deliberate: wrong password answers **400** (not
+403 in test item 2) to mirror `POST /api/images/unlock` per step 3, and the frontend
+toggle only arms/disarms (`lock-set` sets the password) so the historical "Active On
+Next Start" UX text stays true. Tests: `tests/test_server.py::AppLockTests` (5 new,
+incl. reconnect survival, allowlist, settings expose/erase guards) plus the updated
+`crypto.status()` contract — suite `Ran 110 OK (5 skipped)`.
+
 ## The finding
 
 Obscura advertises an app lock in its UI ("Password Saved - App Lock Enabled",
