@@ -76,9 +76,9 @@ Every remaining item now has its own plan file in `plans/`:
 
 | Plan | State |
 |---|---|
-| `plans/P3-app-lock-is-client-side.md` | Open - server-side lock, API 423 when locked (Option A chosen) |
-| `plans/P4-restore-blocks-event-loop.md` | Open - `restore` blocks the event loop |
-| `plans/P5-wipe-residue.md` | Open - `wipe` leaves db.prev / free pages / posters/ |
+| `plans/P3-app-lock-is-client-side.md` | Done - server-side lock: 423 on data endpoints while locked (`5620b6a`) |
+| `plans/P4-restore-blocks-event-loop.md` | Done - restore runs in a threadpool; 413 oversized guard (`21742cc`) |
+| `plans/P5-wipe-residue.md` | Done - `wipe` removes db.prev / posters / WAL-journal and VACUUMs (`9aacd5d`) |
 | `plans/P6-frontend-test-harness.md` | Open - frontend has zero automated tests |
 
 ## Rules for the next phases

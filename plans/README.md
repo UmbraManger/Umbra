@@ -75,17 +75,17 @@ already been fixed in the working tree. The real risk has moved from "unfixed bu
 ## Recommended order
 
 ```
-P7 (artifact/bundle hygiene) ─► DONE (branch executor-p7; user merge pending)
+P7 (artifact/bundle hygiene) ─► DONE (merged, 152df81)
 P0-DESKTOP ──────────────────► DONE (criteria 1-5 verified; user eyeball pending)
-P0 (repo hygiene) ───────────► NEXT: merge executor-p7, then commit everything,
-                               including the build fix
+P0 (repo hygiene) ───────────► DONE (incl. Step 6 docs rewrite; PATCHES.md residuals fixed)
 
-P1 (yaml SSRF)     ──┐
-P2 (DNS rebinding) ──┼─► both touch server.py's fetch path; P2 depends on P1's helper landing first
-P3 (app lock)      ──┘  independent, safe to parallelize
-P4 (restore loop)  ──┐
-P5 (wipe residue)  ──┴─► both backend/data lifecycle; independent of the above
-P6 (JS harness)    ────► independent, but best done after P0 so the harness is itself committed
+P1 (yaml SSRF)     ──────────► DONE (54bb8e3)
+P2 (DNS rebinding) ──────────► DONE (3cd5a87)
+P3 (app lock)      ──────────► DONE (5620b6a; docs 6aaa454)
+P4 (restore loop)  ──────────► DONE (21742cc)
+P5 (wipe residue)  ──────────► DONE (9aacd5d)
+P6 (JS harness)    ──────────► NEXT: commit the package.json scaffold, add
+                               node_modules/ to .gitignore, then harness + first tests
 ```
 
 Two plans touch `db.py` and must not run concurrently: **P0-DESKTOP Step 3** (writable
@@ -97,7 +97,7 @@ Two plans touch `db.py` and must not run concurrently: **P0-DESKTOP Step 3** (wr
 |---|---|
 | [P7](P7-build-artifacts-and-bundle-junk.md) — build artifacts & bundle junk | **DONE** — merged into master (`152df81`), 4 junk files deleted, ignore rules active |
 | [P0-DESKTOP](P0-DESKTOP-portable-native-app.md) — portable native app | **DONE (verified 2026-10-05)** — criteria 1-5 all re-checked by the reviewer: clean build, runs from `%TEMP%\obscura-portable` (native window + WebView2 + HTTP 403 + 24 scrapers installed), fails legibly (modal box + `startup-error.log`), recreates `data\`, suite `Ran 90 OK (5 skipped)`. Remaining MANUAL eyeball: user opens `%TEMP%\obscura-portable\Obscura.exe`, confirms window renders + one live lookup; optional Step 5 (tkinter→native dialogs) declined as out of scope |
-| [P0](P0-repo-hygiene.md) — repo hygiene | **DONE except Step 6** — 10 themed commits + merge, clean tree, 24 scrapers tracked, `requirements.lock.txt` present, fresh clone runs `90 OK (5 skipped)` (reviewer-verified). Outstanding: rewrite `backend/PATCHES.md` + `PHASE0.md` (still cite nonexistent tests) |
+| [P0](P0-repo-hygiene.md) — repo hygiene | **DONE** — 10 themed commits + merge, 24 scrapers tracked, `requirements.lock.txt` present, fresh clone runs the suite green (reviewer-verified); Step 6 rewrite landed as `41ca27d`, and residual false citations (`test_security.py`/`test_helpers.py`) + stale counts in `backend/PATCHES.md` corrected — suite now `Ran 110 OK (5 skipped)` |
 | [P1](P1-yaml-scraper-ssrf.md) — yaml scraper SSRF | **DONE** — merged into master (`54bb8e3`): `run_yaml` guarded, `net_guard.py` hosts `safe_image_url`, 8 new tests |
 | [P2](P2-ssrf-dns-rebinding.md) — DNS rebinding / redirects | **DONE** — merged into master (`3cd5a87`, stacked on P1's helper): `safe_get` re-validates every hop + blocks https→http downgrade; TOCTOU documented as residual (no IP pinning, per plan); 4 new tests |
 | [P3](P3-app-lock-is-client-side.md) — app lock | **DONE** — Option A shipped server-side: `crypto.set_locked/is_locked` flag, `SecurityMiddleware` answers 423 for every data endpoint except `/api/ping`, `/api/images/unlock`, `/api/images/status`, `/api/lock`, `/api/unlock`; `POST /api/lock` arms (salt + Argon2id/PBKDF2 params, `current` proves a change), `POST /api/unlock` verifies and clears the session flag (record stays armed for next boot), `POST /api/lock/now` locks the live session, `main.py` re-locks on boot from `settings.lock.on && hash`; settings reads expose only `on/pass_set` and a client PUT can never carry or erase hash/salt/kdf; the old `ui.js` screen, the `events.js` sha256 path and `settings.lock.hash` are gone; 5 new tests |

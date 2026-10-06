@@ -150,24 +150,23 @@ Unchanged: backend/keystore.py logic (annotation only).
   for pywebview, dev extra for ruff; notes that cryptography>=42 is needed
   for Argon2id (older builds fall back to PBKDF2).
 
-## Test evidence — 102 tests, 5 skipped, all passing
+## Test evidence — 110 tests, 5 skipped, all passing
 
 The repo keeps ONE suite: the stdlib unittest suite under tests/:
 
-- Run: & venv/Scripts/python.exe -m unittest discover -s tests -t .
-- Result: Ran 102 tests in 8.328s → OK (skipped=5) (skip = non-installed web
-  deps; no npm/jsdom DOM harness is kept).
-- Component files: tests/test_crypto.py (10), tests/test_security.py (11),
-  tests/test_helpers.py (20), tests/test_server.py (rest of the suite).
+- Run: & .venv/Scripts/python.exe -m unittest discover -s tests -t .
+- Result: Ran 110 tests in ~8s → OK (skipped=5) (no npm/jsdom DOM harness is
+  kept yet — see plans/P6-frontend-test-harness.md).
+- Component files: tests/test_scrapers.py (22), tests/test_server.py (20),
+  tests/test_crypto.py (19), tests/test_scanner.py (13), tests/test_media.py (12),
+  tests/test_backup.py (11), tests/test_db.py (7), tests/test_julesjordan.py (5),
+  tests/test_keystore.py (1).
   Every storage test runs in a throw-away temp folder via
   tests/helpers.IsolatedCase; the real data/ folder and the OS keyring are
   never opened.
 
 ## Known limits / next steps
 
-- App lock (server-side, API 423 when locked): plans/P3-app-lock-is-client-side.md.
-- Restore blocks the event loop: plans/P4-restore-blocks-event-loop.md.
-- Wipe leaves residue (obscura.db.prev, free pages, posters/): plans/P5-wipe-residue.md.
 - Frontend test harness: plans/P6-frontend-test-harness.md.
 - frontend/js/events.js (1,116 lines now) is still the fattest module — splitting
   the delegated click switch into per-domain handlers is the next tidy-up.
