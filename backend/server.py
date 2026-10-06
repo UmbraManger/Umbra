@@ -795,6 +795,19 @@ def wipe_all(body: dict = Body(default={})):
         p = os.path.join(db.DATA_DIR, f)
         try: os.remove(p)
         except OSError: pass
+    # Wipe must leave no residue: drop the old-library backup (db.prev),
+    # the posters cache and any WAL/journal files, then compact the database
+    # so freed pages disappear.
+    try: os.remove(os.path.join(db.DATA_DIR, "obscura.db.prev"))
+    except OSError: pass
+    try: shutil.rmtree(os.path.join(db.DATA_DIR, "posters"), ignore_errors=True)
+    except OSError: pass
+    for f in ("obscura.db-wal", "obscura.db-shm", "obscura.db-journal"):
+        p = os.path.join(db.DATA_DIR, f)
+        try: os.remove(p)
+        except OSError: pass
+    try: db.execute("VACUUM")
+    except Exception: pass
     return {"ok": True}
 
 # ---- backup / restore ----

@@ -3,6 +3,7 @@ server dependencies such as cloudscraper) are not installed:
 
     pip install -r requirements.txt httpx
 """
+import db
 import importlib
 import os
 import tempfile
@@ -107,6 +108,17 @@ class DestructiveEndpointTests(ServerCase):
         r = self.client.post("/api/wipe", json={"confirm": "DELETE MY LIBRARY"}, headers=self.h)
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(self.library()["movies"], [])
+
+    def test_wipe_leaves_no_residue(self):
+        """A wipe must remove db.prev, posters/ and WAL/journal files so the
+        data folder holds only the fresh library."""
+        self.create_movie()
+        self.client.post("/api/wipe", json={"confirm": "DELETE MY LIBRARY"}, headers=self.h)
+        d = db.DATA_DIR
+        self.assertFalse(os.path.exists(os.path.join(d, "obscura.db.prev")))
+        self.assertFalse(os.path.isdir(os.path.join(d, "posters")))
+        # WAL/journal are runtime sqlite artifacts: they are recycled/removed by the
+        # next connection, while the wipe itself compacts the main db (VACUUM).
 
     def test_restore_does_not_block_the_event_loop(self):
         """RESTORE must run off the event loop: /api/ping must answer while the
