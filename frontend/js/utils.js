@@ -158,7 +158,7 @@ async function encToObjectURL(id){
   return url;
  }catch(e){return null}
 }
-function encBytes(){let n=0;for(const id in encStore){const r=encStore[id];n+=(r.iv.length+r.data.length)/2}return n}
+function encBytes(){let n=0;for(const id in encStore){const r=encStore[id];if(!r||typeof r.iv!=='string'||typeof r.data!=='string')continue;n+=(r.iv.length+r.data.length)/2}return n}
 function clearImageCache(rehydrate){
  encURLCache.forEach(u=>{try{URL.revokeObjectURL(u)}catch(e){}});encURLCache.clear();
  encKey=null;

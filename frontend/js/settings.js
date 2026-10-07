@@ -222,14 +222,8 @@ function renderSettings(){
   <div class="ssec"><div class="shead"><i data-lucide="skull"></i><h2>Danger Zone</h2></div>
    <div class="maintrow"><div><b>Return To Default Settings</b><span class="mono">Reset Preferences · Library Is Kept</span></div><button class="btn" data-action="reset"><i data-lucide="history"></i>Return To Default Settings</button></div>
    <div class="maintrow"><div><b>Clear All Data</b><span class="mono">Delete Library · Favorites · Encrypted Images · Settings</span></div><button class="btn danger" data-action="wipe"><i data-lucide="trash-2"></i>Clear All Data</button></div>
-   <div style="margin-top:14px"><label class="flab">Clear Individual Tabs</label>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
-     <button class="btn sm danger" data-action="clear-tab" data-tab="movies"><i data-lucide="trash-2"></i>Movies</button>
-     <button class="btn sm danger" data-action="clear-tab" data-tab="scenes"><i data-lucide="trash-2"></i>Scenes</button>
-     <button class="btn sm danger" data-action="clear-tab" data-tab="performers"><i data-lucide="trash-2"></i>Performers</button>
-     <button class="btn sm danger" data-action="clear-tab" data-tab="studios"><i data-lucide="trash-2"></i>Studios</button>
-     <button class="btn sm danger" data-action="clear-tab" data-tab="categories"><i data-lucide="trash-2"></i>Categories</button>
-    </div>
+   <div style="margin-top:14px">
+    ${[['movies','Movies'],['scenes','Scenes'],['performers','Performers'],['studios','Studios'],['categories','Categories']].map(([k,n])=>`<div class="maintrow"><div><b><i data-lucide="trash-2" style="width:14px;height:14px;vertical-align:-2px"></i> ${n}</b><span class="mono">Delete All ${n} · References Become Stale</span></div><button class="btn danger" data-action="clear-tab" data-tab="${k}"><i data-lucide="trash-2"></i>Clear ${n}</button></div>`).join('')}
     <p class="note" style="margin-top:8px">Clear Data For A Specific Tab Only. This Cannot Be Undone.</p>
    </div></div>
  </div>`;

@@ -233,9 +233,31 @@ def _register_crud(kind):
                 os.remove(path); file_removed = True
             except OSError: pass
         return {"ok": True, "file_removed": file_removed}
+    def delete_all(body: dict = Body(default={})):
+        if (body or {}).get("confirm") != "DELETE":
+            raise HTTPException(400, 'confirmation required: send {"confirm":"DELETE"}')
+        # Mirror the single-row delete: drop this kind's poster/cover blobs and
+        # watch positions, orphan the movie links scenes point at, then clear
+        # the table. Cross-kind references are left stale on purpose (the UI
+        # confirm says so).
+        if kind in ("movies", "scenes"):
+            cols = {"movies": ["poster_f", "poster_b"],
+                    "scenes": ["cover_a", "cover_b"]}[kind]
+            ids = set()
+            for row in db.query(f"SELECT {','.join(cols)} FROM {TABLES[kind]}"):
+                for c in cols:
+                    m = re.match(r"/api/images/(i[0-9a-f]{8})$", row[c] or "")
+                    if m: ids.add(m.group(1))
+            for i in ids: crypto.remove_image(i)
+        if kind == "movies":
+            db.execute("UPDATE scenes SET movie_id=NULL WHERE movie_id IS NOT NULL")
+        db.execute("DELETE FROM positions WHERE media_id LIKE ?", (kind[:-1] + ":%",))
+        db.execute(f"DELETE FROM {TABLES[kind]}")
+        return {"ok": True}
     app.post(f"/api/{kind}")(create)
     app.put(f"/api/{kind}")(update)
     app.delete(f"/api/{kind}/{{rid}}")(delete)
+    app.post(f"/api/{kind}/deleteAll")(delete_all)
 
 for _kind in TABLES:
     _register_crud(_kind)

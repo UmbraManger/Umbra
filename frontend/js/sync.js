@@ -97,6 +97,7 @@ const Sync={
  },
  push(kind,op,item){
   if(!this.on||!item)return;
+  if(op==='deleteAll'){this._enqueue({url:'/api/'+kind+'/deleteAll',method:'POST',body:JSON.stringify(item)},true);return}
   this._enqueue({url:op==='delete'?'/api/'+kind+'/'+item.id:'/api/'+kind,
    method:op==='delete'?'DELETE':op==='create'?'POST':'PUT',body:JSON.stringify(item)});
  },

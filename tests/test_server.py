@@ -86,6 +86,15 @@ class CrudTests(ServerCase):
         self.client.put("/api/settings", json={"theme": "light"}, headers=self.h)
         self.assertEqual(self.client.get("/api/settings", headers=self.h).json()["theme"], "light")
 
+    def test_clear_tab_requires_confirm_then_empties_the_table(self):
+        self.create_movie()
+        r = self.client.post("/api/movies/deleteAll", json={}, headers=self.h)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(len(self.library()["movies"]), 1)
+        r = self.client.post("/api/movies/deleteAll", json={"confirm": "DELETE"}, headers=self.h)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.library()["movies"], [])
+
 
 class ImageTests(ServerCase):
     def test_upload_then_fetch(self):

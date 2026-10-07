@@ -659,7 +659,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    mount(){$('#ctab-ok').addEventListener('click',()=>{
     const arr=tab==='movies'?DB.movies:tab==='scenes'?DB.scenes:tab==='performers'?DB.performers:tab==='studios'?DB.studios:DB.categories;
     arr.length=0;
-    Sync.push(tab==='studios'?'studios':tab==='categories'?'categories':tab,'deleteAll',{});
+    Sync.push(tab,'deleteAll',{confirm:'DELETE'});
     closeModal();render();toast(`${label} Cleared`,'trash-2');
    })}}],0,480);
  }
