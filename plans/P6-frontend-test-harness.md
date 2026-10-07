@@ -5,8 +5,9 @@
 **Status: DONE (2026-10-06).** Harness shipped: `package.json` + `package-lock.json`
 committed, `node_modules/` gitignored, `tests/frontend/harness.js` + 4 test files
 (`utils`, `state`, `security`, `boot`), and `tools/run_tests.bat` runs JS first then the
-Python suite (preferring `.venv`). Numbers: **`npm test` → 11/11 pass; Python →
-`Ran 110 tests … OK (skipped=5)`** — both from one command: `tools\run_tests.bat`.
+Python suite (preferring `.venv`). Numbers: **`npm test` → 13/13 pass; Python →
+`Ran 111 tests … OK` (no skips — the 5 julesjordan tests unskipped once lxml
+was declared)** — both from one command: `tools\run_tests.bat`.
 Regression drill performed: broke `fmtDur` in `utils.js` → red at the exact assertion →
 reverted → green. Three implementation deviations, all deliberate: (1) the npm script
 globs `tests/frontend/*.test.js` instead of passing the directory — Node 22.22 treats a

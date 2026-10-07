@@ -20,7 +20,7 @@ deviations from the sketch below, both deliberate: wrong password answers **400*
 toggle only arms/disarms (`lock-set` sets the password) so the historical "Active On
 Next Start" UX text stays true. Tests: `tests/test_server.py::AppLockTests` (5 new,
 incl. reconnect survival, allowlist, settings expose/erase guards) plus the updated
-`crypto.status()` contract — suite `Ran 110 OK`.
+`crypto.status()` contract — suite `Ran 111 OK`.
 
 ## The finding
 
