@@ -155,9 +155,9 @@ Unchanged: backend/keystore.py logic (annotation only).
 The repo keeps ONE Python suite (stdlib unittest under tests/) plus the P6 JS harness:
 
 - Run: & .venv/Scripts/python.exe -m unittest discover -s tests -t .
-- Result: Ran 110 tests in ~8s → OK (skipped=5); the npm/jsdom harness runs 11
-  more (`npm test`) — see plans/P6-frontend-test-harness.md. One command for
-  both: `tools\run_tests.bat`.
+- Result: Ran 110 tests → OK, no skips (the 5 julesjordan tests unskipped once
+  lxml was declared); the npm/jsdom harness runs 11 more (`npm test`) — see
+  plans/P6-frontend-test-harness.md. One command for both: `tools\run_tests.bat`.
 - Component files: tests/test_scrapers.py (22), tests/test_server.py (20),
   tests/test_crypto.py (19), tests/test_scanner.py (13), tests/test_media.py (12),
   tests/test_backup.py (11), tests/test_db.py (7), tests/test_julesjordan.py (5),
