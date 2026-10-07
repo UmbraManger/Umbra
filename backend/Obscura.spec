@@ -32,6 +32,10 @@ a = Analysis(
         'tkinter',
         # imported at module scope by server.py
         'pydantic', 'cloudscraper',
+        # lxml is imported by 11 runtime-loaded scrapers/ files (shipped as
+        # data, so static analysis never sees those imports); without it every
+        # lookup on those scrapers dies with "No module named 'lxml'".
+        'lxml', 'lxml.etree', 'lxml.html',
         # this project's own lazily-imported modules (see backend/algolia.py etc.)
         'algolia', 'p1api', 'scrape', 'keystore',
         # sqlite
