@@ -150,13 +150,14 @@ Unchanged: backend/keystore.py logic (annotation only).
   for pywebview, dev extra for ruff; notes that cryptography>=42 is needed
   for Argon2id (older builds fall back to PBKDF2).
 
-## Test evidence — 110 tests, 5 skipped, all passing
+## Test evidence — 110 Python + 11 JS tests, all passing
 
-The repo keeps ONE suite: the stdlib unittest suite under tests/:
+The repo keeps ONE Python suite (stdlib unittest under tests/) plus the P6 JS harness:
 
 - Run: & .venv/Scripts/python.exe -m unittest discover -s tests -t .
-- Result: Ran 110 tests in ~8s → OK (skipped=5) (no npm/jsdom DOM harness is
-  kept yet — see plans/P6-frontend-test-harness.md).
+- Result: Ran 110 tests in ~8s → OK (skipped=5); the npm/jsdom harness runs 11
+  more (`npm test`) — see plans/P6-frontend-test-harness.md. One command for
+  both: `tools\run_tests.bat`.
 - Component files: tests/test_scrapers.py (22), tests/test_server.py (20),
   tests/test_crypto.py (19), tests/test_scanner.py (13), tests/test_media.py (12),
   tests/test_backup.py (11), tests/test_db.py (7), tests/test_julesjordan.py (5),
@@ -167,6 +168,5 @@ The repo keeps ONE suite: the stdlib unittest suite under tests/:
 
 ## Known limits / next steps
 
-- Frontend test harness: plans/P6-frontend-test-harness.md.
 - frontend/js/events.js (1,116 lines now) is still the fattest module — splitting
   the delegated click switch into per-domain handlers is the next tidy-up.

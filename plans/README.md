@@ -84,8 +84,7 @@ P2 (DNS rebinding) ──────────► DONE (3cd5a87)
 P3 (app lock)      ──────────► DONE (5620b6a; docs 6aaa454)
 P4 (restore loop)  ──────────► DONE (21742cc)
 P5 (wipe residue)  ──────────► DONE (9aacd5d)
-P6 (JS harness)    ──────────► NEXT: commit the package.json scaffold, add
-                               node_modules/ to .gitignore, then harness + first tests
+P6 (JS harness)    ──────────► DONE (11 JS tests; one command: tools\run_tests.bat)
 ```
 
 Two plans touch `db.py` and must not run concurrently: **P0-DESKTOP Step 3** (writable
@@ -103,7 +102,7 @@ Two plans touch `db.py` and must not run concurrently: **P0-DESKTOP Step 3** (wr
 | [P3](P3-app-lock-is-client-side.md) — app lock | **DONE** — Option A shipped server-side: `crypto.set_locked/is_locked` flag, `SecurityMiddleware` answers 423 for every data endpoint except `/api/ping`, `/api/images/unlock`, `/api/images/status`, `/api/lock`, `/api/unlock`; `POST /api/lock` arms (salt + Argon2id/PBKDF2 params, `current` proves a change), `POST /api/unlock` verifies and clears the session flag (record stays armed for next boot), `POST /api/lock/now` locks the live session, `main.py` re-locks on boot from `settings.lock.on && hash`; settings reads expose only `on/pass_set` and a client PUT can never carry or erase hash/salt/kdf; the old `ui.js` screen, the `events.js` sha256 path and `settings.lock.hash` are gone; 5 new tests |
 | [P4](P4-restore-blocks-event-loop.md) — restore event loop | **DONE** — committed (`21742cc`): restore runs via `run_in_threadpool`, `Content-Length > 50 MB` refused with 413 before any body byte is read; tests assert `/api/ping` answers while a restore is in flight |
 | [P5](P5-wipe-residue.md) — wipe residue | **DONE** — committed (`9aacd5d`): wipe removes `obscura.db.prev`, `posters/`, WAL/journal and `VACUUM`s; residue test green |
-| [P6](P6-frontend-test-harness.md) — frontend tests | TODO (no `package.json` yet) |
+| [P6](P6-frontend-test-harness.md) — frontend tests | **DONE** — jsdom harness (real `<script>` injection loader) + `utils`/`state`/`security`/`boot` tests, `node_modules/` gitignored, `tools/run_tests.bat` runs both suites; `npm test` → **11/11**, Python → `Ran 110 OK (5 skipped)` |
 
 Status legend: TODO · PARTIAL (some steps verified done) · DONE · BLOCKED — executors may
 update this column.

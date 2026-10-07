@@ -2,6 +2,22 @@
 
 **Severity:** Medium · **Effort:** Medium · **Depends on:** P0 (commit the harness itself)
 
+**Status: DONE (2026-10-06).** Harness shipped: `package.json` + `package-lock.json`
+committed, `node_modules/` gitignored, `tests/frontend/harness.js` + 4 test files
+(`utils`, `state`, `security`, `boot`), and `tools/run_tests.bat` runs JS first then the
+Python suite (preferring `.venv`). Numbers: **`npm test` → 11/11 pass; Python →
+`Ran 110 tests … OK (skipped=5)`** — both from one command: `tools\run_tests.bat`.
+Regression drill performed: broke `fmtDur` in `utils.js` → red at the exact assertion →
+reverted → green. Three implementation deviations, all deliberate: (1) the npm script
+globs `tests/frontend/*.test.js` instead of passing the directory — Node 22.22 treats a
+directory arg as a literal test file and dies with `MODULE_NOT_FOUND`; (2) the harness
+injects each file as a real `<script>` instead of `window.eval` — every module starts
+`"use strict"`, so eval-scoped declarations never reach the shared global scope the
+tests read back (script tags do, exactly like the browser); (3) `requestAnimationFrame`
+is routed through the window's own timers — jsdom's `pretendToBeVisual` pump survives
+`window.close()` and then crashes reading the torn-down location, failing otherwise-
+green tests as uncaughtExceptions. No `frontend/js/*` source was modified (Option A).
+
 ## The finding
 
 There is no `package.json` anywhere in the repository, no test runner, and no JS test

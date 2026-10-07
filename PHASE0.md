@@ -79,7 +79,7 @@ Every remaining item now has its own plan file in `plans/`:
 | `plans/P3-app-lock-is-client-side.md` | Done - server-side lock: 423 on data endpoints while locked (`5620b6a`) |
 | `plans/P4-restore-blocks-event-loop.md` | Done - restore runs in a threadpool; 413 oversized guard (`21742cc`) |
 | `plans/P5-wipe-residue.md` | Done - `wipe` removes db.prev / posters / WAL-journal and VACUUMs (`9aacd5d`) |
-| `plans/P6-frontend-test-harness.md` | Open - frontend has zero automated tests |
+| `plans/P6-frontend-test-harness.md` | Done - jsdom harness + 11 tests (`npm test`); `tools\run_tests.bat` runs both suites |
 
 ## Rules for the next phases
 
