@@ -29,3 +29,6 @@ New Text Document.txt
 /scrapers/__pycache__/
 /scrapers/meta.json
 
+# node (P6 test harness - node_modules is never committed)
+node_modules/
+

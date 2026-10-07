@@ -1,0 +1,1 @@
+{"name":"obscura-frontend","private":true,"scripts":{"test":"node --test \"tests/frontend/*.test.js\""},"devDependencies":{"jsdom":"^25.0.0"}}
