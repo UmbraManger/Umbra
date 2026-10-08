@@ -384,9 +384,32 @@ function detailToolbarInput(e){
  }
 }
 
+let sceneChain=null;  // {scenes,idx} — a movie with no local file plays its linked scenes in sequence
+function chainPaint(){
+ if(!sceneChain)return;
+ const pos=$('#sc-chain-pos'),nav=$('#sc-chain-nav');
+ if(!pos||!nav)return;
+ const sc=sceneChain.scenes[sceneChain.idx];
+ pos.textContent=` · Scene ${sceneChain.idx+1} / ${sceneChain.scenes.length} — ${sc.title||'Untitled'}`;
+ nav.innerHTML=`<button class="chip" data-chain="-1"${sceneChain.idx===0?' disabled':''}>Prev</button><button class="chip" data-chain="1"${sceneChain.idx===sceneChain.scenes.length-1?' disabled':''}>Next</button>`;
+ $$('[data-chain]',nav).forEach(b=>b.addEventListener('click',()=>chainGo(sceneChain.idx+(+b.dataset.chain))));
+}
+function chainGo(idx){
+ if(!sceneChain)return;
+ sceneChain.idx=Math.max(0,Math.min(idx,sceneChain.scenes.length-1));
+ const sc=sceneChain.scenes[sceneChain.idx];
+ const host=$('#pwrap');if(!host)return;
+ host.innerHTML=realPlayerHTML('16/9',sc,'scene');
+ mountPlayer(host,sc,'scene');
+ chainPaint();
+ const v=$('video',host);
+ if(v){v.addEventListener('ended',()=>chainGo(sceneChain.idx+1),{once:true});try{v.play().catch(()=>{})}catch(e){}}
+ icons();
+}
 function renderDetail(kind,id){
  const item=byId(kind,id);
  if(!item){smartBack(kind);return}
+ sceneChain=null;
  for(const k in detailSecs)delete detailSecs[k];
  for(const k in detailPg)delete detailPg[k];
  detailUIReset();
@@ -410,9 +433,7 @@ function renderDetail(kind,id){
     <button class="btn ${item.fav?'fav-on':''}" data-action="toggle-fav" data-kind="${kind}" data-id="${item.id}"><i data-lucide="heart"></i>${item.fav?'In Favorites':'Add To Favorites'}</button>
     <button class="btn" data-action="add-to-pl" data-kind="${kind}" data-id="${item.id}"><i data-lucide="list-plus"></i>Add To Playlist</button>
     <button class="btn" data-action="edit"><i data-lucide="pencil"></i>Edit</button>
-    <button class="btn" data-action="fetch-info"><i data-lucide="cloud-download"></i>Update Information</button>
-    <button class="btn" data-action="fetch-posters"><i data-lucide="image-plus"></i>${kind==='movie'?'Update Posters':'Update Covers'}</button>
-    ${kind==='scene'?`<button class="btn" data-action="fetch-gallery"><i data-lucide="images"></i>Fetch Gallery</button>`:''}
+    <button class="btn" data-action="fetch-menu"><i data-lucide="cloud-download"></i>Get Info &amp; Images</button>
     <button class="btn" data-action="reveal"><i data-lucide="folder-open"></i>Show File Location</button>
     <button class="btn" data-action="share"><i data-lucide="share-2"></i>Share</button>
     <button class="btn danger" data-action="del"><i data-lucide="trash-2"></i>Delete</button>
@@ -422,6 +443,13 @@ function renderDetail(kind,id){
   playerBlock=`<div class="player-section"><div class="seclabel mono" style="margin-top:0">Watching</div><div id="pwrap">${(Sync.on&&item.filePath)?realPlayerHTML(kind==='movie'?'16/9':'16/9',item,kind):playerHTML(kind==='movie'?'16/9':'16/9')}</div></div>`;
   if(kind==='movie'){
    const linked=DB.scenes.filter(sc=>sc.movieId===item.id);
+   // No local video for the movie itself? Play its linked scenes here instead —
+   // the first mounts in #pwrap, the rest auto-advance on 'ended' (chainGo).
+   const playable=linked.filter(sc=>sc.filePath);
+   if(!item.filePath&&Sync.on&&playable.length){
+    sceneChain={scenes:playable,idx:0};
+    playerBlock=`<div class="player-section"><div class="seclabel mono" style="margin-top:0">Playing Scenes<span class="dim" id="sc-chain-pos"></span></div><div id="pwrap">${realPlayerHTML('16/9',playable[0],'scene')}</div><div class="dchips" style="margin-top:10px" id="sc-chain-nav"></div></div>`;
+   }
    extra=linked.length?`<div class="seclabel mono">Scenes In This Movie</div><div class="grid" style="--cw:250px">${linked.map(sceneCard).join('')}</div>`:'';
   }
  }
@@ -500,7 +528,13 @@ function renderDetail(kind,id){
   ${item.logo?`<div class="studio-logo-lg"><img src="${esc(item.logo)}" alt=""><div class="logo-foot"><div class="logo-side">${cTag}${socLinks?`<span class="logo-socials">${socLinks}</span>`:''}</div>${actsHTML}</div></div>`:''}
   <div class="detail-head ${kind==='performer'?'perf':''}${(kind==='studio'||kind==='category')?' single':''}">${kind==='scene'?`<div class="media-col">${mediaHTML}${galleryHTML}</div>`:`${mediaHTML}${galleryHTML}`}${infoHTML}</div>
   ${playerBlock}${extra}</div>`;
- if(kind==='movie'||kind==='scene')mountPlayer($('#pwrap'),item,kind);
+ if(sceneChain){
+  mountPlayer($('#pwrap'),sceneChain.scenes[0],'scene');
+  chainPaint();
+  const v0=$('video',$('#pwrap'));
+  if(v0)v0.addEventListener('ended',()=>chainGo(1),{once:true});
+ }
+ else if(kind==='movie'||kind==='scene')mountPlayer($('#pwrap'),item,kind);
  if(kind==='studio'||kind==='category'){dInitPicker();dEnsureChecks($('#main'))}
  // Movies / Scenes tabs (sub-studio sections + sub-studio pages)
  $$('[data-stab]',$('#main')).forEach(b=>b.addEventListener('click',()=>{

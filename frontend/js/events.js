@@ -414,6 +414,19 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
     });
    }}],0,520);
  }
+ else if(act==='fetch-menu'){
+  const v=state.view;if(v.name!=='detail'||(v.kind!=='movie'&&v.kind!=='scene'))return;
+  openModal([{title:'Get Information & Images',
+   html:()=>`<div class="cmsg" style="margin-bottom:14px">Choose What To Fetch For This ${v.kind==='movie'?'Movie':'Scene'}.</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+     <button class="btn" data-action="fetch-info"><i data-lucide="cloud-download"></i>Update Information</button>
+     <button class="btn" data-action="fetch-posters"><i data-lucide="image-plus"></i>${v.kind==='movie'?'Update Posters':'Update Covers'}</button>
+     ${v.kind==='scene'?`<button class="btn" data-action="fetch-gallery"><i data-lucide="images"></i>Fetch Gallery</button>`:''}
+    </div>`,
+   footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`,
+   mount(){icons()}
+  }],0,520);
+ }
  else if(act==='fetch-info'||act==='fetch-posters'){
   const v=state.view;if(v.name!=='detail')return;
   const item=byId(v.kind,v.id);if(!item)return;

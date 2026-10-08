@@ -68,7 +68,26 @@ def main():
         import scrapers as scraper_engine
         scraper_engine.install_bundled()     # frozen build only: ship the library
         import webview
-        webview.create_window("Obscura", url + f"/?t={API_TOKEN}", width=1360, height=860, min_size=(960, 640))
+        window = webview.create_window("Obscura", url + f"/?t={API_TOKEN}", width=1360, height=860, min_size=(960, 640))
+
+        def _dark_caption(*_):
+            # The app is dark-themed; Windows otherwise paints the caption light.
+            # Best-effort cosmetic — must never break startup. (Switching the
+            # theme in Settings doesn't repaint the caption; no backend bridge
+            # exists for that yet.)
+            try:
+                import ctypes
+                hwnd = ctypes.windll.user32.FindWindowW(None, "Obscura")
+                if not hwnd:
+                    return
+                on = ctypes.c_int(1)
+                for attr in (20, 19):   # DWMWA_USE_IMMERSIVE_DARK_MODE
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                        hwnd, attr, ctypes.byref(on), ctypes.sizeof(on))
+            except Exception:
+                pass
+
+        window.events.shown += _dark_caption
         webview.start()
         server.should_exit = True
 
