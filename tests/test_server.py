@@ -96,6 +96,23 @@ class CrudTests(ServerCase):
         self.assertEqual(self.library()["movies"], [])
 
 
+class FrontendServingTests(ServerCase):
+    """StaticFiles sends no Cache-Control, so WebView2 heuristic-caches js/*.js
+    and keeps serving a stale bundle across sessions — the UI then looks
+    'not applied' even though the files on disk are current."""
+
+    def test_frontend_assets_are_not_cached(self):
+        for path in ("/js/utils.js", "/index.html", "/"):
+            r = self.client.get(path)
+            if r.status_code != 200:
+                continue
+            self.assertIn("no-store", r.headers.get("cache-control", ""), path)
+
+    def test_api_responses_keep_their_own_cache_headers(self):
+        self.assertEqual("no-store" in self.client.get(
+            "/api/settings", headers=self.h).headers.get("cache-control", ""), False)
+
+
 class ImageTests(ServerCase):
     def test_upload_then_fetch(self):
         r = self.client.post("/api/images", headers=self.h,

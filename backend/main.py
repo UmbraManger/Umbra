@@ -68,7 +68,29 @@ def main():
         import scrapers as scraper_engine
         scraper_engine.install_bundled()     # frozen build only: ship the library
         import webview
-        window = webview.create_window("Obscura", url + f"/?t={API_TOKEN}", width=1360, height=860, min_size=(960, 640))
+
+        def _caption_bg():
+            # Paint the native caption with the app's own background so the
+            # title bar stops clashing with the theme. Falls back to the dark
+            # theme's shell colour; never breaks startup.
+            try:
+                s = db.get_settings()
+                if s.get("theme") == "light":
+                    return "#f1ecdf"        # --bg of the light ("Paper & Bronze") theme
+                adv = s.get("adv") or {}    # top-level; theme itself is a flat string
+                if adv.get("background"):
+                    c = str(adv["background"]).strip().lstrip("#")
+                    if len(c) == 3:
+                        c = "".join(ch * 2 for ch in c)
+                    if len(c) == 6:
+                        return "#" + c.lower()
+            except Exception:
+                pass
+            return "#100e0a"        # --bg of the dark ("Ink & Amber") theme
+
+        window = webview.create_window(
+            "Obscura", url + f"/?t={API_TOKEN}", width=1360, height=860,
+            min_size=(960, 640), background_color=_caption_bg())
 
         def _dark_caption(*_):
             # The app is dark-themed; Windows otherwise paints the caption light.

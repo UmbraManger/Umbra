@@ -953,3 +953,16 @@ def frontend_dir():
 FRONTEND = frontend_dir()
 if os.path.isdir(FRONTEND):
     app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="frontend")
+
+    @app.middleware("http")
+    async def _no_store_frontend(request, call_next):
+        # StaticFiles sends no Cache-Control, so WebView2 applies heuristic
+        # caching and keeps serving a stale js/*.js across sessions — the UI
+        # then looks "not applied" even though the bundle on disk is new.
+        # index.html escapes this via its ?t= cache-buster; force every asset
+        # to revalidate so a fresh launch always loads the current frontend.
+        resp = await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            resp.headers["Cache-Control"] = "no-store, must-revalidate"
+            resp.headers["Pragma"] = "no-cache"
+        return resp
