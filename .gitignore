@@ -21,6 +21,7 @@ dist/
 build_dbg/
 dist_dbg/
 *.log
+build.err
 
 # local tooling state
 .codegraph/
