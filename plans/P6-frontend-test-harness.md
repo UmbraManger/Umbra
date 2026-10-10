@@ -5,7 +5,7 @@
 **Status: DONE (2026-10-06).** Harness shipped: `package.json` + `package-lock.json`
 committed, `node_modules/` gitignored, `tests/frontend/harness.js` + 4 test files
 (`utils`, `state`, `security`, `boot`), and `tools/run_tests.bat` runs JS first then the
-Python suite (preferring `.venv`). Numbers: **`npm test` → 18/18 pass; Python →
+Python suite (preferring `.venv`). Numbers: **`npm test` → 19/19 pass; Python →
 `Ran 124 tests … OK` (no skips — the 5 julesjordan tests unskipped once lxml
 was declared)** — both from one command: `tools\run_tests.bat`.
 Regression drill performed: broke `fmtDur` in `utils.js` → red at the exact assertion →

@@ -7,30 +7,25 @@ function renderAbout(){
  const syncStatus=Sync.on?'Active · Backend Connected':'Local Only';
  let storageSize='-';
  try{const raw=localStorage.getItem('obscura:v1');if(raw)storageSize=((new Blob([raw]).size)/1024).toFixed(1)+' KB'}catch(e){}
+ const stats=[['Version','0.9'],['Total Items',totalItems],['Favorites',favs],['Storage',storageSize],
+  ...counts.map(c=>[c[0],c[1]])];
  $('#main').innerHTML=`<div class="page narrow">
   ${pageHeadHTML('about')}
- </div>
- <div class="scat" id="cat-about"><div class="scat-head"><i data-lucide="info"></i><span>About</span></div>
-  <div class="ssec"><div class="shead"><i data-lucide="aperture"></i><h2>Obscura</h2><span class="mono">Private Media Manager</span></div>
-   <div style="padding:4px 0 12px;color:var(--muted);font-size:13px;line-height:1.6">A self-hosted, private media library for organizing movies, scenes, performers, and studios. Your data stays on your device${Sync.on?' and synced via your backend':''}.</div>
-   <div class="frow" style="gap:16px;margin-bottom:16px">
-    <div class="cnt"><div class="mono">Version</div><div class="cv">0.9</div></div>
-    <div class="cnt"><div class="mono">Total Items</div><div class="cv">${totalItems}</div></div>
-    <div class="cnt"><div class="mono">Favorites</div><div class="cv">${favs}</div></div>
-    <div class="cnt"><div class="mono">Storage</div><div class="cv">${storageSize}</div></div>
+  <div class="scat" id="cat-about"><div class="scat-head"><i data-lucide="info"></i><span>About</span></div>
+   <div class="ssec"><div class="shead"><i data-lucide="aperture"></i><h2>Obscura</h2><span class="mono">Private Media Manager</span></div>
+    <div style="padding:4px 0 16px;color:var(--muted);font-size:13px;line-height:1.6">A self-hosted, private media library for organizing movies, scenes, performers, and studios. Your data stays on your device${Sync.on?' and synced via your backend':''}.</div>
+    <div class="counts" style="margin-bottom:20px">${stats.map(s=>`<div class="cnt"><div class="mono">${s[0]}</div><div class="cv">${s[1]}</div></div>`).join('')}</div>
+    <div style="margin-bottom:16px"><div class="flab">Sync</div><div style="font-size:13px;color:var(--muted)">${syncStatus}</div></div>
+    <div style="margin-bottom:16px"><div class="flab">Theme</div><div style="font-size:13px;color:var(--muted)">${settings.theme==='dark'?'Dark':'Light'}${settings.adv?.accent?' · Accent: '+esc(settings.adv.accent):''}</div></div>
+    <div style="margin-bottom:16px"><div class="flab">Image Protection</div><div style="font-size:13px;color:var(--muted)">${settings.imgProt?.on?'Encrypted':'Off'}</div></div>
+    <div class="flab">Data</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+     <button class="btn" data-action="export-data"><i data-lucide="download"></i>Export Library</button>
+     <button class="btn" data-action="clear-data"><i data-lucide="trash-2"></i>Clear All Data</button>
+    </div>
+    <p class="note" style="margin-top:16px">Obscura stores everything in your browser's local storage. Export regularly to keep backups. No telemetry, no accounts, no cloud - unless you set up sync.</p>
    </div>
-   <div class="counts" style="margin-bottom:20px">${counts.map(c=>`<div class="cnt"><div class="mono">${c[0]}</div><div class="cv">${c[1]}</div></div>`).join('')}</div>
-   <div style="margin-bottom:16px"><div class="flab">Sync</div><div style="font-size:13px;color:var(--muted)">${syncStatus}</div></div>
-   <div style="margin-bottom:16px"><div class="flab">Theme</div><div style="font-size:13px;color:var(--muted)">${settings.theme==='dark'?'Dark':'Light'}${settings.adv?.accent?' · Accent: '+esc(settings.adv.accent):''}</div></div>
-   <div style="margin-bottom:16px"><div class="flab">Image Protection</div><div style="font-size:13px;color:var(--muted)">${settings.imgProt?.on?'Encrypted':'Off'}</div></div>
-   <div class="flab">Data</div>
-   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-    <button class="btn" data-action="export-data"><i data-lucide="download"></i>Export Library</button>
-    <button class="btn" data-action="clear-data"><i data-lucide="trash-2"></i>Clear All Data</button>
-   </div>
-   <p class="note" style="margin-top:16px">Obscura stores everything in your browser's local storage. Export regularly to keep backups. No telemetry, no accounts, no cloud - unless you set up sync.</p>
   </div>
- </div>
  </div>`;
  icons();
  $$('[data-action=export-data]').forEach(b=>b.addEventListener('click',()=>{
