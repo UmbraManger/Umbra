@@ -74,4 +74,33 @@ async function lockApp(){
 }
 
 
+/* ===== NATIVE TITLE BAR (frameless window) ===== */
+// pywebview frameless windows have no OS chrome, so the page draws the bar.
+// Dragging is pywebview's: elements matching .pywebview-drag-region move the
+// window (easy_drag is off — it would hijack every mousedown in the app).
+// Hidden entirely in --browser debug mode, where the browser owns the chrome.
+function mountTitleBar(){
+ const pv=window.pywebview;
+ if(!pv||!pv.platform||document.body.classList.contains('frameless'))return;
+ document.body.classList.add('frameless');
+ const api=()=>(window.pywebview&&window.pywebview.api)||{};
+ const call=n=>{const f=api()[n];if(typeof f==='function')f()};
+ $('#tb-min')&&$('#tb-min').addEventListener('click',()=>call('minimize'));
+ $('#tb-close')&&$('#tb-close').addEventListener('click',()=>call('close'));
+ $('#tb-max')&&$('#tb-max').addEventListener('click',()=>call('toggle_max'));
+ const tb=$('#titlebar');
+ // double-click anywhere but the buttons = maximize/restore, like a real bar
+ tb&&tb.addEventListener('dblclick',e=>{if(e.target.closest('.tb-btns'))return;call('toggle_max')});
+ // No border to drag on a frameless window: the bottom-right grip is the resize.
+ const grip=$('#tb-resize');
+ if(grip)grip.addEventListener('mousedown',e=>{
+  e.preventDefault();
+  const s={x:e.screenX,y:e.screenY,w:window.innerWidth,h:window.innerHeight};
+  const mv=ev=>{const r=api().resize_to;if(typeof r==='function')r(Math.max(960,s.w+ev.screenX-s.x),Math.max(640,s.h+ev.screenY-s.y))};
+  const up=()=>{window.removeEventListener('mousemove',mv);window.removeEventListener('mouseup',up)};
+  window.addEventListener('mousemove',mv);window.addEventListener('mouseup',up);
+ });
+}
+mountTitleBar();
+
 Sync.init();

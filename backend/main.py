@@ -55,31 +55,39 @@ def caption_colors():
     return bg, fg
 
 
-def colorref(h: str):
-    """'#rrggbb' (or '#rgb') → Windows COLORREF 0x00BBGGRR, else None.
+class _WinControls:
+    """Title-bar buttons for the frameless window — there is no OS chrome.
 
-    Returns None instead of raising: a stray value in settings must not take
-    the whole caption repaint down with it (that bug left the bar white).
+    ponytail: `maximized` is tracked here rather than read back from the OS, so
+    maximizing with Win+Up desyncs the button glyph (the toggle still works).
+    Reading the real state means hooking the form's WndProc, which is far more
+    machinery than a title bar is worth.
     """
-    try:
-        c = h.lstrip("#")
-        if len(c) == 3:
-            c = "".join(ch * 2 for ch in c)
-        if len(c) != 6:
-            return None
-        r, g, b = (int(c[i:i + 2], 16) for i in (0, 2, 4))
-        return (b << 16) | (g << 8) | r
-    except Exception:
-        return None
+    window = None
+    maximized = False
 
+    def minimize(self):
+        if self.window:
+            self.window.minimize()
 
-def is_dark(h: str) -> bool:
-    """Perceived brightness of '#rrggbb' — decides the fallback caption style."""
-    c = colorref(h)
-    if c is None:
-        return True
-    r, g, b = c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF
-    return (r * 299 + g * 587 + b * 114) // 1000 < 128
+    def toggle_max(self):
+        if not self.window:
+            return
+        if self.maximized:
+            self.window.restore()
+            self.maximized = False
+        else:
+            self.window.maximize()
+            self.maximized = True
+
+    def resize_to(self, width, height):
+        """Bottom-right grip: a frameless window has no border to drag."""
+        if self.window:
+            self.window.resize(max(960, int(width)), max(640, int(height)))
+
+    def close(self):
+        if self.window:
+            self.window.destroy()
 
 def main():
     port = find_port()
@@ -119,40 +127,15 @@ def main():
         scraper_engine.install_bundled()     # frozen build only: ship the library
         import webview
 
+        controls = _WinControls()
+        # frameless: Windows draws no title bar, so the page draws it (see
+        # mountTitleBar). easy_drag stays off — it would make every mousedown
+        # in the app drag the window; dragging comes from .pywebview-drag-region.
         window = webview.create_window(
             "Obscura", url + f"/?t={API_TOKEN}", width=1360, height=860,
-            min_size=(960, 640), background_color=caption_colors()[0])
-
-        def _paint_caption(*_):
-            # Windows paints the title bar itself: pywebview's background_color
-            # only covers the page area, so DWM has to be told the colours.
-            # DWMWA_CAPTION_COLOR (35) / DWMWA_TEXT_COLOR (36) repaint the bar
-            # to match the theme; older Windows builds reject them, in which
-            # case at least go dark so the default white bar doesn't glare.
-            # Best-effort cosmetic — must never break startup. (Changing the
-            # theme in Settings applies at the next launch; repainting live
-            # would need a backend bridge.)
-            try:
-                import ctypes
-                hwnd = ctypes.windll.user32.FindWindowW(None, "Obscura")
-                if not hwnd:
-                    return
-
-                def _set(attr, val):
-                    v = ctypes.c_uint(val & 0xFFFFFFFF)
-                    return ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                        hwnd, attr, ctypes.byref(v), ctypes.sizeof(v)) == 0
-
-                bg, fg = caption_colors()
-                cb, cf = colorref(bg), colorref(fg)
-                if cb is None or cf is None or not (_set(35, cb) and _set(36, cf)):
-                    if is_dark(bg):
-                        for attr in (20, 19):   # DWMWA_USE_IMMERSIVE_DARK_MODE
-                            _set(attr, 1)
-            except Exception:
-                pass
-
-        window.events.shown += _paint_caption
+            min_size=(960, 640), frameless=True, easy_drag=False,
+            js_api=controls, background_color=caption_colors()[0])
+        controls.window = window
         webview.start()
         server.should_exit = True
 

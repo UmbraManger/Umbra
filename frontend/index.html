@@ -99,6 +99,21 @@ input,select,textarea{font-family:inherit;color:var(--text)}img{display:block}sv
 ::selection{background:var(--accent);color:var(--accent-ink)}
 ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px;border:3px solid var(--bg)}::-webkit-scrollbar-track{background:transparent}
 #app{display:flex;height:100vh}
+/* Frameless native window: Windows draws no title bar, so the page does.
+   Hidden until body.frameless (set only inside pywebview). The .pywebview-drag-region
+   class is what makes pywebview drag the window from here. */
+#titlebar{display:none;align-items:center;gap:10px;height:34px;padding-left:14px;background:var(--bg);border-bottom:1px solid var(--line);position:relative;z-index:400;user-select:none}
+body.frameless #titlebar{display:flex}
+body.frameless #app{height:calc(100vh - 34px)}
+.tb-name{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+.tb-btns{margin-left:auto;display:flex;height:100%}
+.tb-btns button{width:46px;height:100%;display:grid;place-items:center;color:var(--muted);transition:background .12s,color .12s}
+.tb-btns button:hover{background:var(--surface2);color:var(--text)}
+.tb-btns button svg{width:13px;height:13px}
+#tb-close:hover{background:#c0392b;color:#fff}
+/* A frameless window has no border to drag, so this corner is the resize. */
+#tb-resize{display:none;position:fixed;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;z-index:400}
+body.frameless #tb-resize{display:block}
 #sidebar{width:236px;flex-shrink:0;border-right:1px solid var(--line);background:var(--bg2);display:flex;flex-direction:column;padding:18px 0 14px;overflow-y:auto}
 #main{flex:1;overflow-y:auto;position:relative}
 .page{max-width:1400px;margin:0 auto;padding:34px 24px 90px;--dt-gap:20px}
@@ -666,6 +681,15 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radiu
 </style>
 </head>
 <body>
+<div id="titlebar" class="pywebview-drag-region">
+ <span class="tb-name">Obscura</span>
+ <div class="tb-btns">
+  <button id="tb-min" title="Minimize" aria-label="Minimize"><i data-lucide="minus"></i></button>
+  <button id="tb-max" title="Maximize" aria-label="Maximize"><i data-lucide="square"></i></button>
+  <button id="tb-close" title="Close" aria-label="Close"><i data-lucide="x"></i></button>
+ </div>
+</div>
+<div id="tb-resize" title="Resize"></div>
 <div id="app">
   <aside id="sidebar"></aside>
   <main id="main"></main>
