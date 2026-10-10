@@ -113,6 +113,29 @@ class FrontendServingTests(ServerCase):
             "/api/settings", headers=self.h).headers.get("cache-control", ""), False)
 
 
+class ScanProgressTests(ServerCase):
+    """The candidates scan ffprobes every file synchronously, so the settings
+    bar polls /api/scan/progress instead of sitting on a fake 30%."""
+
+    def test_progress_reports_an_idle_shape(self):
+        r = self.client.get("/api/scan/progress", headers=self.h)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(sorted(r.json()), ["active", "done", "total"])
+        self.assertFalse(r.json()["active"])
+
+    def test_a_scan_counts_files_then_clears_active(self):
+        d = os.path.join(self._tmp, "lib")
+        os.makedirs(d)
+        open(os.path.join(d, "a.mp4"), "wb").close()
+        r = self.client.post("/api/scan/candidates",
+                             json={"dirs": [d]}, headers=self.h)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["count"], 1)
+        p = self.client.get("/api/scan/progress", headers=self.h).json()
+        self.assertFalse(p["active"], "must not be left active after the scan")
+        self.assertEqual((p["done"], p["total"]), (1, 1))
+
+
 class ImageTests(ServerCase):
     def test_upload_then_fetch(self):
         r = self.client.post("/api/images", headers=self.h,

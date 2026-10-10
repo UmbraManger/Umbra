@@ -19,6 +19,24 @@ function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a
 function icons(){try{window.lucide&&lucide.createIcons({attrs:{'stroke-width':1.8}})}catch(e){}
  if(document.body&&document.body.dataset.booted&&typeof hydrateEncImages==='function')hydrateEncImages(document);}
 function toast(msg,icon='check'){const d=document.createElement('div');d.className='toast';d.innerHTML=`<i data-lucide="${icon}"></i><span>${esc(msg)}</span>`;$('#toast-root').appendChild(d);icons();setTimeout(()=>{d.classList.add('out');setTimeout(()=>d.remove(),260)},3200)}
+// Drive the Settings scan bar (#scanprog) from /api/scan/progress while a scan
+// request is in flight. Returns stop(msg) which clears the timer, fills the bar
+// and sets the label. ponytail: polls rather than streaming — one shared global
+// on the server and 250ms of fetches is all this needs (no job queue).
+function scanProgressWatch(){
+ const prog=$('#scanprog'),fill=$('#sp-fill'),txt=$('#sp-txt');
+ if(!prog||!fill||!txt)return ()=>{};
+ prog.style.display='';fill.style.width='0%';txt.textContent='Scanning...';
+ const tick=setInterval(()=>{
+  fetch('/api/scan/progress').then(r=>r.ok?r.json():null).then(p=>{
+   if(p&&p.total){
+    fill.style.width=Math.round(p.done/p.total*100)+'%';
+    txt.textContent=`Scanning ${p.done} / ${p.total} Files`;
+   }
+  }).catch(()=>{});
+ },250);
+ return msg=>{clearInterval(tick);fill.style.width='100%';if(msg)txt.textContent=msg};
+}
 function fbHash(s){let h=5381;for(let i=0;i<7;i++){for(const c of String(s)+i)h=((h<<5)+h+c.charCodeAt(0))|0}return 'fb'+Math.abs(h).toString(16).padStart(14,'0')}
 async function sha256(s){
  try{

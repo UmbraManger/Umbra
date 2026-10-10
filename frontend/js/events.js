@@ -858,7 +858,11 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="ndir-ok">Add Directory</button>`,
    mount(){const inp=$('#ndir');inp.focus();
     $('#ndir-ok').addEventListener('click',()=>{const v=inp.value.trim();if(!v){inp.classList.add('err');return}settings.dirs.push(v);saveSettings();closeModal();renderSettings();icons();toast('Directory Added - Scanning...','folder-plus');lastScanDir=v;
-     if(Sync.on){fetch('/api/scan/candidates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dirs:[v]})}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}).then(j=>openImportModal(j.candidates||[])).catch(()=>toast('Scan Failed','alert-triangle'))}
+     if(Sync.on){const stop=scanProgressWatch();
+       fetch('/api/scan/candidates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dirs:[v]})})
+        .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
+        .then(j=>{stop('Scan Complete');openImportModal(j.candidates||[])})
+        .catch(()=>{stop('Scan Failed');toast('Scan Failed','alert-triangle')})}
     })}}],0,560);
  }
  else if(act==='dir-browse'){
@@ -897,13 +901,12 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
  }
  else if(act==='scan-import'){
   if(!Sync.on){toast('Import Requires The Backend','alert-triangle');return}
-  const prog=$('#scanprog'),fill=$('#sp-fill'),txt=$('#sp-txt');
-  prog.style.display='';fill.style.width='30%';txt.textContent='Scanning...';a.disabled=true;
+  const stop=scanProgressWatch();a.disabled=true;
   const scanDirs=lastScanDir?[lastScanDir]:settings.dirs;lastScanDir=null;
   fetch('/api/scan/candidates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dirs:scanDirs})})
    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
-   .then(j=>{fill.style.width='100%';txt.textContent='Scan Complete';a.disabled=false;openImportModal(j.candidates||[])})
-   .catch(()=>{fill.style.width='100%';txt.textContent='Scan Failed';a.disabled=false;toast('Could Not Read Candidates','alert-triangle')});
+   .then(j=>{stop('Scan Complete');a.disabled=false;openImportModal(j.candidates||[])})
+   .catch(()=>{stop('Scan Failed');a.disabled=false;toast('Could Not Read Candidates','alert-triangle')});
  }
  else if(act==='imp-kind'){
   const card=a.closest('.impcard');

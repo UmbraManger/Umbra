@@ -34,3 +34,30 @@ test('corrupt obscura:encimgs recovers to {} and keeps a raw copy', () => {
   assert.strictEqual(w.localStorage.getItem(corruptKey), '{not json');
   w.close();
 });
+test('scanProgressWatch drives the settings scan bar from the real count', async () => {
+  const w = createWindow(undefined, {
+    fetch: (url) => {
+      const u = String(url);
+      if (u.includes('/api/scan/progress')) {
+        return Promise.resolve({ ok: true, json: async () => ({ active: true, done: 5, total: 10 }) });
+      }
+      if (u.includes('/api/ping')) return Promise.resolve({ ok: true, json: async () => ({ ok: true }) });
+      return Promise.resolve({ ok: false, json: async () => ({}) });
+    },
+  });
+  await new Promise(r => setTimeout(r, 60));
+  w.eval('renderSettings()');
+  const stop = w.eval('scanProgressWatch()');
+  const prog = w.document.getElementById('scanprog');
+  assert.ok(prog, 'the scan bar markup must be on the settings page');
+  assert.strictEqual(prog.style.display, '', 'the bar becomes visible immediately');
+  assert.strictEqual(w.document.getElementById('sp-fill').style.width, '0%');
+  await new Promise(r => setTimeout(r, 400));          // at least one 250ms poll
+  assert.strictEqual(w.document.getElementById('sp-fill').style.width, '50%');
+  assert.match(w.document.getElementById('sp-txt').textContent, /5 \/ 10 Files/);
+  stop('Scan Complete');
+  assert.strictEqual(w.document.getElementById('sp-fill').style.width, '100%');
+  assert.strictEqual(w.document.getElementById('sp-txt').textContent, 'Scan Complete');
+  w.close();
+});
+

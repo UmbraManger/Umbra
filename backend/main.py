@@ -69,47 +69,64 @@ def main():
         scraper_engine.install_bundled()     # frozen build only: ship the library
         import webview
 
-        def _caption_bg():
-            # Paint the native caption with the app's own background so the
-            # title bar stops clashing with the theme. Falls back to the dark
-            # theme's shell colour; never breaks startup.
+        def _caption_colors():
+            """(caption bg, caption text) for the current theme, as '#rrggbb'."""
+            bg, fg = "#100e0a", "#ece4d3"          # dark "Ink & Amber"
             try:
                 s = db.get_settings()
                 if s.get("theme") == "light":
-                    return "#f1ecdf"        # --bg of the light ("Paper & Bronze") theme
-                adv = s.get("adv") or {}    # top-level; theme itself is a flat string
+                    bg, fg = "#f1ecdf", "#26200f"  # light "Paper & Bronze"
+                adv = s.get("adv") or {}           # theme itself is a flat string
                 if adv.get("background"):
                     c = str(adv["background"]).strip().lstrip("#")
                     if len(c) == 3:
                         c = "".join(ch * 2 for ch in c)
                     if len(c) == 6:
-                        return "#" + c.lower()
+                        bg = "#" + c.lower()       # a Settings › Background swatch
             except Exception:
                 pass
-            return "#100e0a"        # --bg of the dark ("Ink & Amber") theme
+            return bg, fg
 
         window = webview.create_window(
             "Obscura", url + f"/?t={API_TOKEN}", width=1360, height=860,
-            min_size=(960, 640), background_color=_caption_bg())
+            min_size=(960, 640), background_color=_caption_colors()[0])
 
-        def _dark_caption(*_):
-            # The app is dark-themed; Windows otherwise paints the caption light.
-            # Best-effort cosmetic — must never break startup. (Switching the
-            # theme in Settings doesn't repaint the caption; no backend bridge
-            # exists for that yet.)
+        def _paint_caption(*_):
+            # Windows paints the title bar itself: pywebview's background_color
+            # only covers the page area, so DWM has to be told the colours.
+            # DWMWA_CAPTION_COLOR (35) and DWMWA_TEXT_COLOR (36) repaint the
+            # bar to match the theme — the earlier DWMWA_USE_IMMERSIVE_DARK_MODE
+            # approach only ever made it black with white text, which is why it
+            # never matched the app. Best-effort cosmetic, must never break
+            # startup. (Changing the theme in Settings doesn't repaint it; no
+            # backend bridge exists for that yet, so it applies next launch.)
             try:
                 import ctypes
                 hwnd = ctypes.windll.user32.FindWindowW(None, "Obscura")
                 if not hwnd:
                     return
-                on = ctypes.c_int(1)
-                for attr in (20, 19):   # DWMWA_USE_IMMERSIVE_DARK_MODE
-                    ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                        hwnd, attr, ctypes.byref(on), ctypes.sizeof(on))
+
+                def _set(attr, val):
+                    v = ctypes.c_uint(val)
+                    return ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                        hwnd, ctypes.c_int(attr), ctypes.byref(v),
+                        ctypes.sizeof(v)) == 0
+
+                def _ref(h):                       # COLORREF is 0x00BBGGRR
+                    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+                    return (b << 16) | (g << 8) | r
+
+                bg, fg = _caption_colors()
+                if not (_set(35, _ref(bg)) and _set(36, _ref(fg))):
+                    # Older Windows rejects 35/36 — at least make the bar dark
+                    # so the light app text stays readable.
+                    if bg == "#100e0a":
+                        for attr in (20, 19):       # DWMWA_USE_IMMERSIVE_DARK_MODE
+                            _set(attr, 1)
             except Exception:
                 pass
 
-        window.events.shown += _dark_caption
+        window.events.shown += _paint_caption
         webview.start()
         server.should_exit = True
 

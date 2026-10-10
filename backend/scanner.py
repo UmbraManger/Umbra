@@ -4,6 +4,11 @@ import db
 
 RESUME = os.path.join(db.DATA_DIR, "scanstate.json")
 
+# Windows opens a console window for every child process; ffprobe is spawned
+# once per file while scanning, so without this each import flashes N black
+# CMD windows. 0 is a no-op (and accepted) on POSIX.
+_NO_WIN = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+
 VIDEO_EXT = {".mp4", ".mkv", ".avi", ".webm", ".mov", ".m4v", ".wmv", ".mpg", ".mpeg"}
 IMG_EXT   = (".jpg", ".jpeg", ".png", ".webp")
 
@@ -48,7 +53,7 @@ def probe_duration(path: str) -> int | None:
     try:
         r = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", path],
-            capture_output=True, timeout=15)
+            capture_output=True, timeout=15, creationflags=_NO_WIN)
         if r.returncode != 0: return None
         j = json.loads(r.stdout.decode("utf-8", "ignore"))
         dur = float(j.get("format", {}).get("duration", 0) or 0)

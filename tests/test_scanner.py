@@ -101,3 +101,20 @@ class ImportTests(IsolatedCase):
                          ("Scene", "2020-01-02", "mv-9"))
         self.assertTrue(row["cover_a"].startswith("/api/images/i"))
         self.assertEqual(row["cover_b"], "")
+
+
+class NoConsoleWindowTests(IsolatedCase):
+    def test_ffprobe_is_spawned_without_a_console_window(self):
+        """Regression (bug report): Windows popped one black CMD window per
+        scanned file, because ffprobe was spawned without CREATE_NO_WINDOW."""
+        from unittest import mock
+        seen = {}
+
+        def fake(*args, **kw):
+            seen.update(kw)
+            raise RuntimeError("no ffprobe in tests")
+
+        with mock.patch.object(scanner.subprocess, "run", fake):
+            self.assertIsNone(scanner.probe_duration("/x/a.mp4"))
+        self.assertIn("creationflags", seen)              # the kwarg is passed
+        self.assertEqual(seen["creationflags"], scanner._NO_WIN)

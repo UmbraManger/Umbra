@@ -508,16 +508,31 @@ def scan(body: dict = Body(...)):
     files = scanner.walk(body.get("dirs", []))
     return {"found": files, "count": len(files)}
 
+# Progress for the candidates scan below: it ffprobes every file synchronously
+# and can take a while, so the UI polls this to show a count instead of looking
+# hung. ponytail: one shared slot (a second scan would overwrite the first) —
+# this is a single-user desktop app, a job queue would be far more machinery.
+_SCAN = {"active": False, "done": 0, "total": 0}
+
+@app.get("/api/scan/progress")
+def scan_progress() -> dict:
+    return dict(_SCAN)
+
 @app.post("/api/scan/candidates")
 def scan_candidates(body: dict = Body(...)):
     files = scanner.walk(body.get("dirs", []))
-    for f in files:
-        f["imported"] = scanner.is_imported(f["path"])
-        f["guess_title"] = scanner.guess_title(f["path"])
-        dur = scanner.probe_duration(f["path"])
-        f["duration_min"] = dur
-        f["guess_kind"] = scanner.guess_kind(f["path"], duration_min=dur)
-        f["posters"] = [os.path.basename(p) for p in scanner.find_posters(f["path"])]
+    _SCAN.update(active=True, done=0, total=len(files))
+    try:
+        for i, f in enumerate(files, 1):
+            f["imported"] = scanner.is_imported(f["path"])
+            f["guess_title"] = scanner.guess_title(f["path"])
+            dur = scanner.probe_duration(f["path"])
+            f["duration_min"] = dur
+            f["guess_kind"] = scanner.guess_kind(f["path"], duration_min=dur)
+            f["posters"] = [os.path.basename(p) for p in scanner.find_posters(f["path"])]
+            _SCAN["done"] = i
+    finally:
+        _SCAN["active"] = False
     files.sort(key=lambda x: (x["imported"], x["dir"], x["name"]))
     return {"candidates": files, "count": len(files)}
 

@@ -7,6 +7,10 @@ import db
 
 CHUNK = 1024 * 512
 
+# No console window for child processes — ffprobe pops one black CMD window
+# per probe otherwise (see scanner._NO_WIN).
+_NO_WIN = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+
 VIDEO_MIME = {
     ".mp4": "video/mp4", ".mkv": "video/x-matroska", ".avi": "video/x-msvideo",
     ".webm": "video/webm", ".mov": "video/quicktime", ".m4v": "video/mp4",
@@ -119,7 +123,7 @@ def probe(path: str) -> dict:
         r = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json",
              "-show_format", "-show_streams", path],
-            capture_output=True, timeout=15)
+            capture_output=True, timeout=15, creationflags=_NO_WIN)
         if r.returncode != 0:
             return info
         j = json.loads(r.stdout.decode("utf-8", "ignore"))
