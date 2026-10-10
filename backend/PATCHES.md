@@ -150,12 +150,12 @@ Unchanged: backend/keystore.py logic (annotation only).
   for pywebview, dev extra for ruff; notes that cryptography>=42 is needed
   for Argon2id (older builds fall back to PBKDF2).
 
-## Test evidence — 116 Python + 18 JS tests, all passing
+## Test evidence — 124 Python + 18 JS tests, all passing
 
 The repo keeps ONE Python suite (stdlib unittest under tests/) plus the P6 JS harness:
 
 - Run: & .venv/Scripts/python.exe -m unittest discover -s tests -t .
-- Result: Ran 116 tests → OK, no skips (the 5 julesjordan tests unskipped once
+- Result: Ran 124 tests → OK, no skips (the 5 julesjordan tests unskipped once
   lxml was declared); the npm/jsdom harness runs 18 more (`npm test`) — see
   plans/P6-frontend-test-harness.md. One command for both: `tools\run_tests.bat`.
 - Component files: tests/test_scrapers.py (22), tests/test_server.py (20),

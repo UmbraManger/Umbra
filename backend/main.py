@@ -31,6 +31,56 @@ def find_port(start=8765) -> int:
                 continue
     return start
 
+
+def caption_colors():
+    """(title-bar bg, title-bar text) for the current theme, as '#rrggbb'.
+
+    Follows the theme plus any Settings › Background swatch, so the native
+    caption blends with the app instead of standing out against it.
+    """
+    bg, fg = "#100e0a", "#ece4d3"          # dark "Ink & Amber"
+    try:
+        s = db.get_settings()
+        if s.get("theme") == "light":
+            bg, fg = "#f1ecdf", "#26200f"  # light "Paper & Bronze"
+        adv = s.get("adv") or {}           # theme itself is a flat string
+        if adv.get("background"):
+            c = str(adv["background"]).strip().lstrip("#")
+            if len(c) == 3:
+                c = "".join(ch * 2 for ch in c)
+            if len(c) == 6:
+                bg = "#" + c.lower()       # a Settings › Background swatch
+    except Exception:
+        pass
+    return bg, fg
+
+
+def colorref(h: str):
+    """'#rrggbb' (or '#rgb') → Windows COLORREF 0x00BBGGRR, else None.
+
+    Returns None instead of raising: a stray value in settings must not take
+    the whole caption repaint down with it (that bug left the bar white).
+    """
+    try:
+        c = h.lstrip("#")
+        if len(c) == 3:
+            c = "".join(ch * 2 for ch in c)
+        if len(c) != 6:
+            return None
+        r, g, b = (int(c[i:i + 2], 16) for i in (0, 2, 4))
+        return (b << 16) | (g << 8) | r
+    except Exception:
+        return None
+
+
+def is_dark(h: str) -> bool:
+    """Perceived brightness of '#rrggbb' — decides the fallback caption style."""
+    c = colorref(h)
+    if c is None:
+        return True
+    r, g, b = c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF
+    return (r * 299 + g * 587 + b * 114) // 1000 < 128
+
 def main():
     port = find_port()
     url = f"http://127.0.0.1:{port}"
@@ -69,37 +119,19 @@ def main():
         scraper_engine.install_bundled()     # frozen build only: ship the library
         import webview
 
-        def _caption_colors():
-            """(caption bg, caption text) for the current theme, as '#rrggbb'."""
-            bg, fg = "#100e0a", "#ece4d3"          # dark "Ink & Amber"
-            try:
-                s = db.get_settings()
-                if s.get("theme") == "light":
-                    bg, fg = "#f1ecdf", "#26200f"  # light "Paper & Bronze"
-                adv = s.get("adv") or {}           # theme itself is a flat string
-                if adv.get("background"):
-                    c = str(adv["background"]).strip().lstrip("#")
-                    if len(c) == 3:
-                        c = "".join(ch * 2 for ch in c)
-                    if len(c) == 6:
-                        bg = "#" + c.lower()       # a Settings › Background swatch
-            except Exception:
-                pass
-            return bg, fg
-
         window = webview.create_window(
             "Obscura", url + f"/?t={API_TOKEN}", width=1360, height=860,
-            min_size=(960, 640), background_color=_caption_colors()[0])
+            min_size=(960, 640), background_color=caption_colors()[0])
 
         def _paint_caption(*_):
             # Windows paints the title bar itself: pywebview's background_color
             # only covers the page area, so DWM has to be told the colours.
-            # DWMWA_CAPTION_COLOR (35) and DWMWA_TEXT_COLOR (36) repaint the
-            # bar to match the theme — the earlier DWMWA_USE_IMMERSIVE_DARK_MODE
-            # approach only ever made it black with white text, which is why it
-            # never matched the app. Best-effort cosmetic, must never break
-            # startup. (Changing the theme in Settings doesn't repaint it; no
-            # backend bridge exists for that yet, so it applies next launch.)
+            # DWMWA_CAPTION_COLOR (35) / DWMWA_TEXT_COLOR (36) repaint the bar
+            # to match the theme; older Windows builds reject them, in which
+            # case at least go dark so the default white bar doesn't glare.
+            # Best-effort cosmetic — must never break startup. (Changing the
+            # theme in Settings applies at the next launch; repainting live
+            # would need a backend bridge.)
             try:
                 import ctypes
                 hwnd = ctypes.windll.user32.FindWindowW(None, "Obscura")
@@ -107,21 +139,15 @@ def main():
                     return
 
                 def _set(attr, val):
-                    v = ctypes.c_uint(val)
+                    v = ctypes.c_uint(val & 0xFFFFFFFF)
                     return ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                        hwnd, ctypes.c_int(attr), ctypes.byref(v),
-                        ctypes.sizeof(v)) == 0
+                        hwnd, attr, ctypes.byref(v), ctypes.sizeof(v)) == 0
 
-                def _ref(h):                       # COLORREF is 0x00BBGGRR
-                    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
-                    return (b << 16) | (g << 8) | r
-
-                bg, fg = _caption_colors()
-                if not (_set(35, _ref(bg)) and _set(36, _ref(fg))):
-                    # Older Windows rejects 35/36 — at least make the bar dark
-                    # so the light app text stays readable.
-                    if bg == "#100e0a":
-                        for attr in (20, 19):       # DWMWA_USE_IMMERSIVE_DARK_MODE
+                bg, fg = caption_colors()
+                cb, cf = colorref(bg), colorref(fg)
+                if cb is None or cf is None or not (_set(35, cb) and _set(36, cf)):
+                    if is_dark(bg):
+                        for attr in (20, 19):   # DWMWA_USE_IMMERSIVE_DARK_MODE
                             _set(attr, 1)
             except Exception:
                 pass
