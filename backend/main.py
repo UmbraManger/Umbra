@@ -122,7 +122,7 @@ def main():
         # DEBUG ONLY. Normal use is the native window below.
         import webbrowser
         webbrowser.open(url + f"/?t={API_TOKEN}")
-        print(f"Obscura running at {url} — press Ctrl+C to quit.")
+        print(f"Umbra running at {url} — press Ctrl+C to quit.")
         try:
             while True: time.sleep(3600)
         except KeyboardInterrupt:
@@ -137,7 +137,7 @@ def main():
         # mountTitleBar). easy_drag stays off — it would make every mousedown
         # in the app drag the window; dragging comes from .pywebview-drag-region.
         window = webview.create_window(
-            "Obscura", url + f"/?t={API_TOKEN}", width=1360, height=860,
+            "Umbra", url + f"/?t={API_TOKEN}", width=1360, height=860,
             min_size=(960, 640), frameless=True, easy_drag=False,
             js_api=controls, background_color=caption_colors()[0])
         controls._window = window
@@ -149,5 +149,5 @@ if __name__ == "__main__":
         main()
     except Exception:
         # console=False: without this the user sees a process that does nothing.
-        db.alert("Obscura could not start", traceback.format_exc())
+        db.alert("Umbra could not start", traceback.format_exc())
         raise

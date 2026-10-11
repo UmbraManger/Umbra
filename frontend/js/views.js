@@ -4,7 +4,7 @@ function navItem(id,ic,lb,n){const on=state.view.name==='tab'&&state.view.tab===
  return `<button class="nitem ${on?'on':''}" data-action="nav" data-tab="${id}"><i data-lucide="${ic}"></i><span class="nav-label">${lb}</span>${n!=null?`<span class="ncount mono">${n}</span>`:''}</button>`}
 function renderSidebar(){
  $('#sidebar').innerHTML=`
-  <div class="brand"><span class="bmark"><i data-lucide="aperture"></i></span><div><div class="bname">Obscura</div><div class="bsub mono">Private Media Manager</div></div></div>
+  <div class="brand"><span class="bmark"><i data-lucide="aperture"></i></span><div><div class="bname">Umbra</div><div class="bsub mono">Private Media Manager</div></div></div>
   <div class="navlbl mono">Library</div>
   <nav>
    ${navItem('movies','film','Movies',DB.movies.length)}

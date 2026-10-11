@@ -26,7 +26,7 @@ db.connect()
 # (schema incl. positions + column migrations lives in db._migrate)
 log = logging.getLogger("obscura")
 
-app = FastAPI(title="Obscura", version="0.9")
+app = FastAPI(title="Umbra", version="0.9")
 
 # ---- security: per-run token + Host/Origin enforcement ----
 # Everything under /api/ requires the per-run token (header X-Obscura-Token or
@@ -151,7 +151,7 @@ def _to_db(kind, data, create=False):
     return rec
 
 @app.get("/api/ping")
-def ping(): return {"ok": True, "app": "Obscura", "version": "0.9"}
+def ping(): return {"ok": True, "app": "Umbra", "version": "0.9"}
 
 @app.get("/api/library")
 def library():
@@ -944,7 +944,7 @@ def backup_export():
     data = backup_engine.export_zip()
     stamp = time.strftime("%Y%m%d-%H%M")
     return Response(content=data, media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="Obscura-Backup-{stamp}.zip"'})
+        headers={"Content-Disposition": f'attachment; filename="Umbra-Backup-{stamp}.zip"'})
 
 @app.post("/api/backup/restore")
 async def backup_restore(request: Request, file: UploadFile = File(...), confirm: str = Form("")):

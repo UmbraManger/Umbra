@@ -52,7 +52,11 @@ def alert(title: str, text: str) -> None:
 def app_dir() -> str:
     """Portable: data/ lives next to the exe. If that folder can't be written
     (e.g. the app was dropped in C:\\Program Files) fall back to %LOCALAPPDATA%
-    and tell the user where the library went, instead of dying silently."""
+    and tell the user where the library went, instead of dying silently.
+
+    The fallback folder name and obscura.db below are deliberately NOT renamed
+    along with the app: existing installs keep their library there.
+    """
     if getattr(sys, "frozen", False):
         exe_dir = os.path.dirname(os.path.abspath(sys.executable))
         if _writable(exe_dir):
@@ -60,7 +64,7 @@ def app_dir() -> str:
         fallback = os.path.join(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir(),
                                 "Obscura")
         _writable(fallback)
-        alert("Obscura", "This folder is not writable, so your library was moved to:\n\n"
+        alert("Umbra", "This folder is not writable, so your library was moved to:\n\n"
                          f"{fallback}\n\n(data is now stored there)")
         return fallback
     return os.path.dirname(os.path.abspath(__file__))

@@ -7,6 +7,8 @@ try:
 except Exception:
     _OK = False
 
+# Windows Credential Manager key for the image-vault secrets. Do NOT rename to
+# match the app: existing installs would lose their stored keys.
 SERVICE = "Obscura"
 ENTRY = "ai_api_key"
 

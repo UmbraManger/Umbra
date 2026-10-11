@@ -130,7 +130,7 @@ def restore_zip(data: bytes) -> int:
         if integrity != "ok":
             raise ValueError("backup database failed the integrity check — restore aborted")
         if not {"settings", "movies", "scenes"}.issubset(tables):
-            raise ValueError("backup database is not an Obscura library — restore aborted")
+            raise ValueError("backup database is not an Umbra library — restore aborted")
     except Exception:
         try: os.remove(staged)
         except OSError: pass

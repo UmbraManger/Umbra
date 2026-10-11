@@ -579,7 +579,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
     const m=/filename="?([^";]+)"?/.exec(r.headers.get('Content-Disposition')||'');
     const u=URL.createObjectURL(blob);
     const link=document.createElement('a');
-    link.href=u;link.download=m?m[1]:'Obscura-Backup.zip';
+    link.href=u;link.download=m?m[1]:'Umbra-Backup.zip';
     document.body.appendChild(link);link.click();link.remove();
     setTimeout(()=>URL.revokeObjectURL(u),4000);
     toast(pass?'Encrypted Backup Exported':'Backup Exported','download');
