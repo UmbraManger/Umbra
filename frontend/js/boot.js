@@ -102,5 +102,10 @@ function mountTitleBar(){
  });
 }
 mountTitleBar();
+// pywebview injects its bridge with ExecuteScript AFTER the page has parsed, so
+// window.pywebview (and api.*) do not exist yet while our scripts run — mounting
+// at parse time always found nothing and the bar never appeared. 'pywebviewready'
+// is dispatched by pywebview as soon as the api is usable.
+window.addEventListener('pywebviewready',mountTitleBar);
 
 Sync.init();

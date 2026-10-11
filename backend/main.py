@@ -58,36 +58,41 @@ def caption_colors():
 class _WinControls:
     """Title-bar buttons for the frameless window — there is no OS chrome.
 
+    State is stored under PRIVATE names on purpose: pywebview walks the js_api
+    object with dir()/getattr() and recurses into any public object, so a
+    public `window` attribute would publish the whole Window (evaluate_js,
+    destroy, ...) into the page. Names starting with '_' are skipped.
+
     ponytail: `maximized` is tracked here rather than read back from the OS, so
     maximizing with Win+Up desyncs the button glyph (the toggle still works).
     Reading the real state means hooking the form's WndProc, which is far more
     machinery than a title bar is worth.
     """
-    window = None
-    maximized = False
+    _window = None
+    _maximized = False
 
     def minimize(self):
-        if self.window:
-            self.window.minimize()
+        if self._window:
+            self._window.minimize()
 
     def toggle_max(self):
-        if not self.window:
+        if not self._window:
             return
-        if self.maximized:
-            self.window.restore()
-            self.maximized = False
+        if self._maximized:
+            self._window.restore()
+            self._maximized = False
         else:
-            self.window.maximize()
-            self.maximized = True
+            self._window.maximize()
+            self._maximized = True
 
     def resize_to(self, width, height):
         """Bottom-right grip: a frameless window has no border to drag."""
-        if self.window:
-            self.window.resize(max(960, int(width)), max(640, int(height)))
+        if self._window:
+            self._window.resize(max(960, int(width)), max(640, int(height)))
 
     def close(self):
-        if self.window:
-            self.window.destroy()
+        if self._window:
+            self._window.destroy()
 
 def main():
     port = find_port()
@@ -135,7 +140,7 @@ def main():
             "Obscura", url + f"/?t={API_TOKEN}", width=1360, height=860,
             min_size=(960, 640), frameless=True, easy_drag=False,
             js_api=controls, background_color=caption_colors()[0])
-        controls.window = window
+        controls._window = window
         webview.start()
         server.should_exit = True
 

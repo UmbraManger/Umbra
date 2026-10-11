@@ -24,6 +24,20 @@ test('the title bar stays hidden outside the native window', () => {
   w.close();
 });
 
+test('the bar mounts on pywebviewready — the bridge arrives after parse', () => {
+  const w = createWindow();          // no bridge yet, exactly like the real app
+  assert.ok(!w.document.body.classList.contains('frameless'), 'nothing to see yet');
+  w.eval(`window.pywebview={platform:'edgechromium',api:{
+    minimize(){window.__c.push('min')},toggle_max(){},close(){},resize_to(){}
+  }};window.__c=[];`);
+  w.window.dispatchEvent(new w.window.Event('pywebviewready'));
+  assert.ok(w.document.body.classList.contains('frameless'),
+    'pywebviewready must mount the bar (it injects after the page parses)');
+  w.document.getElementById('tb-min').click();
+  assert.deepStrictEqual(calls(w), ['min']);
+  w.close();
+});
+
 test('the native title bar is a drag region with min/max/close', () => {
   const w = nativeWindow();
   assert.ok(w.document.body.classList.contains('frameless'));

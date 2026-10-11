@@ -64,26 +64,34 @@ class WinControlsTests(_MainCase):
 
     def controls(self):
         c = _main._WinControls()
-        c.window = _FakeWindow()
+        c._window = _FakeWindow()
         return c
+
+    def test_the_api_surface_is_only_the_four_buttons(self):
+        """pywebview walks the js_api with dir()/getattr() and recurses into any
+        public object — a public window attribute would publish the whole Window
+        (evaluate_js, destroy, ...) into the page."""
+        c = _main._WinControls()
+        public = {n for n in dir(c) if not n.startswith("_")}
+        self.assertEqual(public, {"minimize", "toggle_max", "resize_to", "close"})
 
     def test_minimize_and_close_reach_the_window(self):
         c = self.controls()
         c.minimize()
         c.close()
-        self.assertEqual(c.window.calls, ["minimize", "destroy"])
+        self.assertEqual(c._window.calls, ["minimize", "destroy"])
 
     def test_toggle_max_alternates_maximize_and_restore(self):
         c = self.controls()
         c.toggle_max()
         c.toggle_max()
-        self.assertEqual(c.window.calls, ["maximize", "restore"])
+        self.assertEqual(c._window.calls, ["maximize", "restore"])
 
     def test_resize_to_clamps_to_the_minimum_window_size(self):
         c = self.controls()
         c.resize_to(400, 300)
         c.resize_to(1200, 900)
-        self.assertEqual(c.window.calls,
+        self.assertEqual(c._window.calls,
                          [("resize", 960, 640), ("resize", 1200, 900)])
 
     def test_a_missing_window_never_raises(self):
