@@ -9,7 +9,7 @@ function renderAbout(){
  try{const raw=localStorage.getItem('obscura:v1');if(raw)storageSize=((new Blob([raw]).size)/1024).toFixed(1)+' KB'}catch(e){}
  const stats=[['Version','0.9'],['Total Items',totalItems],['Favorites',favs],['Storage',storageSize],
   ...counts.map(c=>[c[0],c[1]])];
- $('#main').innerHTML=`<div class="page narrow">
+ $('#main').innerHTML=`<div class="page">
   ${pageHeadHTML('about')}
   <div class="scat" id="cat-about"><div class="scat-head"><i data-lucide="info"></i><span>About</span></div>
    <div class="ssec"><div class="shead"><i data-lucide="aperture"></i><h2>Obscura</h2><span class="mono">Private Media Manager</span></div>

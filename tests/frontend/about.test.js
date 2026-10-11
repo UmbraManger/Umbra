@@ -6,8 +6,8 @@ const { createWindow } = require('./harness');
 test('About renders inside the page wrapper with one balanced stat grid', () => {
   const w = createWindow();
   w.eval('renderAbout()');
-  const page = w.document.querySelector('#main > .page.narrow');
-  assert.ok(page, 'About must render inside .page narrow — it used to escape it');
+  const page = w.document.querySelector('#main > .page');
+  assert.ok(page, 'About must render inside the page wrapper — it used to escape it');
   assert.ok(page.querySelector('#cat-about'), 'the About card lives inside the wrapper');
   assert.strictEqual(w.document.querySelectorAll('#main .page-head').length, 1,
     'exactly one page head');

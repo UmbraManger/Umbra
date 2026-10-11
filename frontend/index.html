@@ -117,7 +117,6 @@ body.frameless #tb-resize{display:block}
 #sidebar{width:236px;flex-shrink:0;border-right:1px solid var(--line);background:var(--bg2);display:flex;flex-direction:column;padding:18px 0 14px;overflow-y:auto}
 #main{flex:1;overflow-y:auto;position:relative}
 .page{max-width:1400px;margin:0 auto;padding:34px 24px 90px;--dt-gap:20px}
-.page.narrow{max-width:880px}
 .brand{display:flex;gap:11px;align-items:center;padding:2px 20px 20px}
 .bmark{width:34px;height:34px;border:1px solid var(--line2);border-radius:9px;display:grid;place-items:center;color:var(--accent)}
 .bmark svg{width:18px;height:18px}
@@ -551,18 +550,18 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radiu
 .pvsel{display:flex;gap:10px;margin-top:10px}
 .pvsel .pv{width:84px}
 .pv-cur img{opacity:.45}
-.ssec{border-top:1px solid var(--line);padding:24px 0}
-.snav{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:6px;padding:10px 0 14px;margin-bottom:6px;background:var(--bg);border-bottom:1px solid var(--line)}
+.ssec{border-top:1px solid var(--line);padding:20px 0}
+.snav{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:6px;padding:8px 0;margin-bottom:0;background:var(--bg);border-bottom:1px solid var(--line)}
 .snav-item{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:999px;border:1px solid var(--line2);white-space:nowrap}
 .snav-item:hover{color:var(--text);border-color:var(--accent)}
 .snav-item i{width:14px;height:14px}
-.scat{padding-top:6px}
-.scat-head{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-family:"JetBrains Mono",monospace;margin:28px 0 4px;padding-top:8px}
-.scat:first-of-type .scat-head{margin-top:8px}
+.scat{padding-top:0}
+.scat-head{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-family:"JetBrains Mono",monospace;margin:20px 0 0;padding-top:0}
+.scat:first-of-type .scat-head{margin-top:2px}
 .scat-head i{width:15px;height:15px;color:var(--accent)}
 .scat .ssec:first-of-type{border-top:none;padding-top:8px}
 .ssec:first-of-type{border-top:none;padding-top:10px}
-.shead{display:flex;align-items:center;gap:11px;margin-bottom:18px}
+.shead{display:flex;align-items:center;gap:11px;margin-bottom:14px}
 .shead svg{width:16px;height:16px;color:var(--accent)}
 .shead h2{font-size:15.5px;font-weight:600;letter-spacing:-.01em}
 .shead .mono{margin-left:auto;font-size:9.5px;letter-spacing:.1em;color:var(--faint)}
