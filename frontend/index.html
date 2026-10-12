@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Umbra - Private Media Manager</title>
+<link rel="icon" href="img/favicon.png">
 <link href="fonts/fonts.css" rel="stylesheet">
 <script src="lucide.min.js"></script>
 <script src="modern-screenshot.min.js"></script>
@@ -106,6 +107,7 @@ input,select,textarea{font-family:inherit;color:var(--text)}img{display:block}sv
 body.frameless #titlebar{display:flex}
 body.frameless #app{height:calc(100vh - 34px)}
 .tb-name{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+.tb-logo{width:17px;height:17px;border-radius:4px;object-fit:cover}
 .tb-btns{margin-left:auto;display:flex;height:100%}
 .tb-btns button{width:46px;height:100%;display:grid;place-items:center;color:var(--muted);transition:background .12s,color .12s}
 .tb-btns button:hover{background:var(--surface2);color:var(--text)}
@@ -120,6 +122,7 @@ body.frameless #tb-resize{display:block}
 .brand{display:flex;gap:11px;align-items:center;padding:2px 20px 20px}
 .bmark{width:34px;height:34px;border:1px solid var(--line2);border-radius:9px;display:grid;place-items:center;color:var(--accent)}
 .bmark svg{width:18px;height:18px}
+.bmark img{width:100%;height:100%;object-fit:cover;border-radius:8px}
 .bname{font-weight:700;letter-spacing:.18em;font-size:14px}
 .bsub{font-size:8.5px;letter-spacing:.1em;color:var(--faint);margin-top:2px}
 .navlbl{font-size:10px;letter-spacing:.14em;color:var(--faint);padding:14px 20px 7px}
@@ -563,6 +566,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radiu
 .ssec:first-of-type{border-top:none;padding-top:10px}
 .shead{display:flex;align-items:center;gap:11px;margin-bottom:14px}
 .shead svg{width:16px;height:16px;color:var(--accent)}
+.shead img.simg{width:17px;height:17px;border-radius:4px;object-fit:cover}
 .shead h2{font-size:15.5px;font-weight:600;letter-spacing:-.01em}
 .shead .mono{margin-left:auto;font-size:9.5px;letter-spacing:.1em;color:var(--faint)}
 .themerow{display:flex;gap:12px;flex-wrap:wrap}
@@ -681,6 +685,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radiu
 </head>
 <body>
 <div id="titlebar" class="pywebview-drag-region">
+ <img class="tb-logo" src="img/favicon.png" alt="">
  <span class="tb-name">Umbra</span>
  <div class="tb-btns">
   <button id="tb-min" title="Minimize" aria-label="Minimize"><i data-lucide="minus"></i></button>

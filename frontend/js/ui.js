@@ -12,7 +12,7 @@ function renderAbout(){
  $('#main').innerHTML=`<div class="page">
   ${pageHeadHTML('about')}
   <div class="scat" id="cat-about"><div class="scat-head"><i data-lucide="info"></i><span>About</span></div>
-   <div class="ssec"><div class="shead"><i data-lucide="aperture"></i><h2>Umbra</h2><span class="mono">Private Media Manager</span></div>
+   <div class="ssec"><div class="shead"><img class="simg" src="img/umbra.png" alt=""><h2>Umbra</h2><span class="mono">Private Media Manager</span></div>
     <div style="padding:4px 0 16px;color:var(--muted);font-size:13px;line-height:1.6">A self-hosted, private media library for organizing movies, scenes, performers, and studios. Your data stays on your device${Sync.on?' and synced via your backend':''}.</div>
     <div class="counts" style="margin-bottom:20px">${stats.map(s=>`<div class="cnt"><div class="mono">${s[0]}</div><div class="cv">${s[1]}</div></div>`).join('')}</div>
     <div style="margin-bottom:16px"><div class="flab">Sync</div><div style="font-size:13px;color:var(--muted)">${syncStatus}</div></div>
