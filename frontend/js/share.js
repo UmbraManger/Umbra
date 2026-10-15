@@ -271,10 +271,10 @@ function openShareDialog(){
 }
 
 /* ===== SCAN IMPORT MODAL ===== */
-function openImportModal(candidates){
- const pending=(candidates||[]).filter(c=>!c.imported);
- const done=(candidates||[]).filter(c=>c.imported);
-  const card=c=>{
+// Module-level on purpose: the "Mark Unimported" handler puts a candidate back
+// into the modal as an editable card, so a wrong Movie/Scene guess can be fixed
+// and re-imported now instead of waiting for the next scan.
+function importCardHTML(c){
   const isMovie=c.guess_kind==='movie';
   const basis=c.duration_min?fmtDur(c.duration_min):(c.size?fmtBytes(c.size):'');
   return `<div class="impcard" data-path="${esc(c.path)}" data-kind="${c.guess_kind}" data-guesstitle="${esc(c.guess_title)}">
@@ -297,11 +297,14 @@ function openImportModal(candidates){
     <span style="flex:1"></span>
     <button class="btn primary sm" data-action="imp-do"><i data-lucide="download"></i>Import</button>
    </div></div>`;
- };
+}
+function openImportModal(candidates){
+ const pending=(candidates||[]).filter(c=>!c.imported);
+ const done=(candidates||[]).filter(c=>c.imported);
  openModal([{title:'Import From Scan',html:()=>`
   <div class="cmsg" style="margin-bottom:14px">${pending.length} New File${pending.length===1?'':'s'} Found - ${done.length} Already Imported. Edit The Suggestions, Then Import Each One.</div>
-  ${pending.map(card).join('')||`<div class="empty" style="padding:34px 16px"><i data-lucide="inbox"></i><span>No New Files To Import.</span></div>`}
+  ${pending.map(importCardHTML).join('')||`<div class="empty" style="padding:34px 16px"><i data-lucide="inbox"></i><span>No New Files To Import.</span></div>`}
   ${done.length?`<div class="divider" style="display:flex;align-items:center;gap:12px;margin:20px 0 12px;color:var(--faint)"><span class="mono" style="font-size:9px;letter-spacing:.14em">Already Imported</span></div>
-   <div class="cplist" style="max-height:180px">${done.map(c=>`<div class="srcrow"><i data-lucide="badge-check"></i><span>${esc(c.name)}</span><button class="tx" data-action="imp-undone" data-path="${esc(c.path)}" title="Mark Unimported"><i data-lucide="rotate-ccw"></i></button></div>`).join('')}</div>`:''}`,
+   <div class="cplist" style="max-height:180px">${done.map(c=>`<div class="srcrow"><i data-lucide="badge-check"></i><span>${esc(c.name)}</span><button class="tx" data-action="imp-undone" data-path="${esc(c.path)}" data-cand="${esc(JSON.stringify(c))}" title="Mark Unimported"><i data-lucide="rotate-ccw"></i></button></div>`).join('')}</div>`:''}`,
   footer:()=>`<span class="push"></span><button class="btn" data-action="imp-all"><i data-lucide="download"></i>Import All</button><button class="btn" data-mclose="1">Close</button>`}],0,760);
 }

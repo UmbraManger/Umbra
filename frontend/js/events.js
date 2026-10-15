@@ -1001,7 +1001,10 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
      done++;
     })
     .catch(()=>{failed++;card.querySelector('.imp-do')?.removeAttribute('disabled')})
-    .finally(()=>importOne(cards.shift()));
+    // then(), not finally(): this promise must resolve only once the WHOLE queue
+    // is done — otherwise the completion toast fires after the first import with
+    // a wrong count, and the dialog gets closed while files are still pending.
+    .then(()=>importOne(cards.shift()));
   };
   importOne(cards.shift()).then(()=>{
    a.disabled=false;icons();renderSidebar();
@@ -1009,8 +1012,39 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   });
  }
  else if(act==='imp-undone'){
-  fetch('/api/scan/undone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:a.dataset.path})}).catch(()=>{});
-  toast('Marked As Unimported - It Will Appear On The Next Scan','rotate-ccw');
+  const path=a.dataset.path;
+  const card=a.closest('.impcard');
+  const row=a.closest('.srcrow');
+  // Rebuild the candidate from the card's own data, or from the copy stashed on
+  // an "Already Imported" row, so the file goes straight back to being editable.
+  let cand=card?{path,name:(card.querySelector('.imp-path')||{}).textContent||'',
+                 guess_title:card.dataset.guesstitle||'',guess_kind:card.dataset.kind||'scene'}:null;
+  if(!cand&&a.dataset.cand){try{cand=JSON.parse(a.dataset.cand)}catch(e){}}
+  const mv=DB.movies.find(m=>m.filePath===path);
+  const sc=mv?null:DB.scenes.find(s=>s.filePath===path);
+  const rec=mv||sc;
+  const finish=()=>{
+   if(rec){const arr=mv?DB.movies:DB.scenes;arr.splice(arr.indexOf(rec),1);renderSidebar()}
+   fetch('/api/scan/undone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})}).catch(()=>{});
+   const host=$('#m-body');
+   if(cand&&host){
+    const tmp=document.createElement('div');
+    tmp.innerHTML=importCardHTML(cand);
+    const fresh=tmp.firstElementChild;
+    if(card&&card.parentNode)card.replaceWith(fresh);
+    else host.insertBefore(fresh,host.firstElementChild);
+    icons();
+   }
+   if(row)row.remove();   // the "Already Imported" row it came from is now a card
+   toast('Unimported - Fix The Details, Then Import Again','rotate-ccw');
+  };
+  // The import created a real record; un-importing must remove it, otherwise the
+  // file returns as a candidate and re-importing it duplicates the row.
+  if(rec){
+   fetch(`/api/${mv?'movies':'scenes'}/${rec.id}`,{method:'DELETE'})
+    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);finish()})
+    .catch(()=>toast('Could Not Remove The Imported Record','alert-triangle'));
+  }else finish();
  }
  else if(act==='dup-check'){
   if(Sync.on){
