@@ -166,12 +166,19 @@ const Positions={
   if(Sync.on)fetch(`/api/media/${kind}/${id}/position`,{method:'DELETE'}).catch(()=>{});
  },
  clearAll(){ this.map={};this.order=[];this.saveOrder();Object.keys(this._t).forEach(k=>clearTimeout(this._t[k]));this._t={}; if(Sync.on)fetch('/api/positions',{method:'DELETE'}).catch(()=>{}) },
- progress(kind,id){
-  const it=byId(kind,id); if(!it) return 0;
-  const pos=this.get(kind,id); if(!pos) return 0;
-  const dur=(it.durationMin||0)*60; if(!dur) return 0;
-  return Math.min(0.99,pos/dur);
- }
+  progress(kind,id){
+   const it=byId(kind,id); if(!it) return 0;
+   const pos=this.get(kind,id); if(!pos) return 0;
+   let dur=(it.durationMin||0)*60;
+   // a movie with no file plays its linked scenes — progress against that total,
+   // not the (often missing or scraped) movie metadata runtime
+   if(kind==='movie'&&!it.filePath){
+    const sum=DB.scenes.filter(s=>s.movieId===id&&s.filePath).reduce((a,s)=>a+(s.durationMin||0)*60,0);
+    if(sum)dur=sum;
+   }
+   if(!dur) return 0;
+   return Math.min(0.99,pos/dur);
+  }
 };
 Positions.loadOrder();
 function toISODate(s){

@@ -270,16 +270,20 @@ function playerHTML(par){
    <button class="btn icon" data-p="quality" title="Quality"><i data-lucide="monitor"></i></button>
    <button class="btn icon" data-p="fs" title="Fullscreen"><i data-lucide="maximize"></i></button></div></div>`;
 }
-function realPlayerHTML(par,item,kind){
+function realPlayerHTML(par,item,kind,coverItem,noPoster,nav){
   const src=`/api/media/${kind}/${item.id}`;
-  const resumed=Positions.get(kind,item.id)>5;
-  if(kind==='movie'){
-   const a=item.posterF||'',b=item.posterB||'';
-   const showCover=(a||b)&&!resumed;
+  // chain mounts resume against the movie's own position — scene positions
+  // (standalone viewing) must not gate the cover either way
+  const rPos=coverItem?Positions.get('movie',coverItem.id):Positions.get(kind,item.id);
+  const resumed=rPos>3;
+  if(kind==='movie'||coverItem){
+   const cm=coverItem||item;
+   const a=cm.posterF||'',b=cm.posterB||'';
+   const showCover=!noPoster&&(a||b)&&!resumed;
    const posters=showCover?`<div class="p-poster-pair">${b?`<img class="p-poster" src="${esc(b)}" alt="">`:''}${a&&a!==b?`<img class="p-poster" src="${esc(a)}" alt="">`:''}</div>`:'';
    return `<div class="player" style="--par:${par}"><div class="p-stage"><video preload="metadata" playsinline style="aspect-ratio:${par}" src="${esc(src)}"></video>${posters}<button class="p-big" aria-label="Play"><i data-lucide="play"></i></button></div>
    <div class="p-menu" hidden></div>
-   <div class="p-bar"><button class="btn icon" data-p="skip-back" title="-10s"><i data-lucide="rewind"></i></button>
+   <div class="p-bar"><button class="btn icon" data-p="skip-back" title="-10s"><i data-lucide="rewind"></i></button>${nav||''}
     <button class="btn icon" data-p="play"><i data-lucide="play"></i></button>
     <button class="btn icon" data-p="skip-fwd" title="+10s"><i data-lucide="fast-forward"></i></button>
     <div class="p-seek"><input type="range" data-p="seek" value="0"></div>
@@ -310,15 +314,18 @@ function realPlayerHTML(par,item,kind){
     <button class="btn icon" data-p="quality" title="Quality"><i data-lucide="monitor"></i></button>
     <button class="btn icon" data-p="fs" title="Fullscreen"><i data-lucide="maximize"></i></button></div></div>`;
  }
-function mountRealPlayer(host,item,kind){
+function mountRealPlayer(host,item,kind,coverItem,pos){
   playerTeardown();
+  pos=pos||{kind,id:item.id};
+  const pSecs=()=>vid.currentTime+(pos.offset?pos.offset():0);
   const stage=$('.p-stage',host),vid=$('video',stage),big=$('.p-big',host),btnPlay=$('[data-p=play]',host);
   const seek=$('[data-p=seek]',host),tCur=$('[data-p=cur]',host),menuEl=$('.p-menu',host);
   let menuType=null,curAudio=0,info={available:false,audio:[],subs:[]};
   const resLabel=h=>h>=2160?'4K (2160p)':h>=1080?'1080p (FHD)':h>=720?'720p (HD)':h+'p';
-  const isMovie=kind==='movie';
-  const posterA=isMovie?(item.posterF||''):(item.covers||[]).filter((v,i,a)=>i===0||v!==a[0])[1]||(item.covers||[])[0]||'';
-  const posterB=isMovie?(item.posterB||''):'';
+  const posterItem=coverItem||item;
+  const isMovie=kind==='movie'||!!coverItem;
+  const posterA=isMovie?(posterItem.posterF||''):(item.covers||[]).filter((v,i,a)=>i===0||v!==a[0])[1]||(item.covers||[])[0]||'';
+  const posterB=isMovie?(posterItem.posterB||''):'';
   const hasPair=isMovie&&(posterA||posterB);
   function removePoster(){
    const pair=$('.p-poster-pair',stage);
@@ -408,25 +415,28 @@ function mountRealPlayer(host,item,kind){
    }
    icons();
   }
+  const openExternal=()=>{
+   fetch(`/api/media/${kind}/${item.id}/open`,{method:'POST'})
+    .then(r=>{
+     if(r.ok)return toast('Opened In OS Default Player','external-link');
+     return r.json().catch(()=>({})).then(j=>toast(j.detail||'Could Not Open Externally','alert-triangle'));
+    })
+    .catch(()=>toast('Could Not Open Externally','alert-triangle'));
+  };
   big.addEventListener('click',e=>{
    e.stopPropagation();
-   if(settings.player==='external'){
-    fetch(`/api/media/${kind}/${item.id}/open`,{method:'POST'})
-     .then(()=>toast('Opened In OS Default Player','external-link'))
-     .catch(()=>toast('Could Not Open Externally','alert-triangle'));
-    return;
-   }
+   if(settings.player==='external'){openExternal();return}
    setPlaying(vid.paused);
   });
-  stage.addEventListener('click',e=>{if(!e.target.closest('.p-big'))setPlaying(vid.paused)});
-  btnPlay.addEventListener('click',()=>setPlaying(vid.paused));
+  stage.addEventListener('click',e=>{if(e.target.closest('.p-big'))return;if(settings.player==='external'){openExternal();return}setPlaying(vid.paused)});
+  btnPlay.addEventListener('click',()=>{if(settings.player==='external'){openExternal();return}setPlaying(vid.paused)});
   $('[data-p=skip-back]',host).addEventListener('click',()=>{vid.currentTime=Math.max(0,vid.currentTime-10)});
   $('[data-p=skip-fwd]',host).addEventListener('click',()=>{vid.currentTime=vid.duration?Math.min(vid.duration,vid.currentTime+10):vid.currentTime+10});
   vid.addEventListener('playing',()=>{setPlaying(true);removePoster()});
   vid.addEventListener('pause',()=>{
    if(!vid.ended){
     setPlaying(false);
-    if(vid.currentTime>3)Positions.saveNow(kind,item.id,vid.currentTime);
+     if(vid.currentTime>3)Positions.saveNow(pos.kind,pos.id,pSecs());
    }
   });
   function revealFrame(){
@@ -434,30 +444,46 @@ function mountRealPlayer(host,item,kind){
    requestAnimationFrame(()=>requestAnimationFrame(removePoster));
   }
   vid.addEventListener('seeked',()=>{
-   if(!vid.paused)return;
-   if(vid.currentTime<=1)showPoster();
-   else revealFrame();
+    if(!vid.paused)return;
+    if(vid.currentTime<=1&&!isMovie)showPoster();
+    else revealFrame();
   });
-  vid.addEventListener('ended',()=>{setPlaying(false);showPoster(true);vid.currentTime=0;});
-  let lastSave=0,posCleared=false;
+  vid.addEventListener('ended',()=>{
+   setPlaying(false);
+   if(!isMovie)showPoster(true);
+   if(!coverItem)vid.currentTime=0;
+   // finished for real — only the last chain scene (or a plain file) completes it
+   if(!pos.isLast||pos.isLast())Positions.clear(pos.kind,pos.id);
+  });
+  let lastSave=0;
   vid.addEventListener('timeupdate',()=>{
-   updateBar();
-   if(vid.duration&&vid.currentTime>vid.duration-15){
-    if(!posCleared){posCleared=true;Positions.clear(kind,item.id)}
-   }else{
-    posCleared=false;
-    if(Math.abs(vid.currentTime-lastSave)>=5){lastSave=vid.currentTime;Positions.save(kind,item.id,vid.currentTime)}
-   }
-  });
-  vid.addEventListener('loadedmetadata',()=>{
-   updateBar();
-   const saved=Positions.get(kind,item.id);
-   if(saved>5&&vid.duration&&saved<vid.duration-15){
-    vid.currentTime=saved;
-    toast('Resumed From '+fmtTime(saved),'history');
-   }
-  });
-  const onUnload=()=>{if(vid.isConnected&&vid.currentTime>3&&!vid.ended)Positions.saveNow(kind,item.id,vid.currentTime)};
+    updateBar();
+    if(Math.abs(vid.currentTime-lastSave)>=5){lastSave=vid.currentTime;Positions.save(pos.kind,pos.id,pSecs())}
+   });
+   vid.addEventListener('loadedmetadata',()=>{
+    updateBar();
+    if(vid.duration&&isFinite(vid.duration)){
+     const real=Math.max(1,Math.round(vid.duration/60));
+     // scraped minute values drift from the actual file — correct them so
+     // Continue Watching progress and chain totals stay honest
+     if(Math.abs((item.durationMin||0)-real)>=1){
+      item.durationMin=real;
+      Sync.push(kind+'s','update',item);
+     }
+    }
+    const saved=Positions.get(pos.kind,pos.id);
+    // chain positions are movie-global; only seek when the key matches this very file
+    if(pos.kind===kind&&pos.id===item.id&&saved>3&&vid.duration&&saved<vid.duration){
+     vid.currentTime=saved;
+     toast('Resumed From '+fmtTime(saved),'history');
+    }
+    const sk=pos.seek?pos.seek():0;
+    if(sk>3&&vid.duration&&sk<vid.duration){
+     vid.currentTime=sk;
+     toast('Resumed From '+fmtTime(sk),'history');
+    }
+   });
+   const onUnload=()=>{if(vid.isConnected&&vid.currentTime>3&&!vid.ended)Positions.saveNow(pos.kind,pos.id,pSecs())};
   window.addEventListener('pagehide',onUnload);
   window.addEventListener('beforeunload',onUnload);
   _playerCleanups.push(()=>{window.removeEventListener('pagehide',onUnload);window.removeEventListener('beforeunload',onUnload)});
@@ -505,10 +531,10 @@ function mountRealPlayer(host,item,kind){
   });
  }).catch(()=>{});
 }
-function mountPlayer(host,item,kind){
+function mountPlayer(host,item,kind,coverItem,pos){
  playerTeardown();
  const realVid=$('video',host);
- if(realVid){mountRealPlayer(host,item,kind);return}
+ if(realVid){mountRealPlayer(host,item,kind,coverItem,pos);return}
  const stage=$('.p-stage',host),cvs=$('canvas',stage),cx=cvs.getContext('2d');
  const seek=$('[data-p=seek]',host),pop=$('.p-pop',host),popCvs=$('canvas',pop),popCx=popCvs.getContext('2d');
  const tCur=$('[data-p=cur]',host),big=$('.p-big',host),btnPlay=$('[data-p=play]',host);

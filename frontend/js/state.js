@@ -134,7 +134,7 @@ const TABS={
 function go(v){state.history.push(state.view);state.view=v;render();$('#main').scrollTop=0}
 function goBack(){const p=state.history.pop();if(p){state.view=p;render();$('#main').scrollTop=0}}
 function smartBack(kind){if(state.history.length)goBack();else{state.view={name:'tab',tab:kindPlural(kind)};render()}}
-function resolvePerformer(name){const n=titleCase(name.trim());const q=n.toLowerCase();let p=DB.performers.find(p=>p.name.toLowerCase()===q);if(!p){p={id:uid('p'),name:n,gender:'f',photo:img('perf-'+slug(n),600,800)};DB.performers.push(p);Sync.push('performers','create',p)}return p.id}
+function resolvePerformer(name){const n=titleCase(name.trim());const q=n.toLowerCase();let p=DB.performers.find(p=>p.name.toLowerCase()===q);if(!p){p={id:uid('p'),name:n,gender:'f',photo:''};DB.performers.push(p);Sync.push('performers','create',p)}return p.id}
 function resolveCategory(name){const n=titleCase(name.trim());const q=n.toLowerCase();let c=DB.categories.find(c=>c.name.toLowerCase()===q);if(!c){c={id:uid('c'),name:n,icon:'tag',desc:''};DB.categories.push(c);Sync.push('categories','create',c)}return c.id}
 function resolveStudio(name){const n=titleCase(name.trim());const q=n.toLowerCase();let s=DB.studios.find(s=>s.name.toLowerCase()===q);if(!s){s={id:uid('st'),name:n,url:'',country:'',desc:'',logo:'',twitter:null,instagram:null};DB.studios.push(s);Sync.push('studios','create',s)}return s.id}
 function findMovieByTitle(name){if(!name)return null;const q=name.trim().toLowerCase();return DB.movies.find(m=>m.title.toLowerCase()===q)||null}

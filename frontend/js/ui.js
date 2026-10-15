@@ -187,7 +187,7 @@ function openActorPicker(selected,onApply){
     const cr=$('#ap-create',list);
     cr&&cr.addEventListener('click',()=>{
      const n=titleCase(query);
-     if(!DB.performers.some(c=>c.name.toLowerCase()===n.toLowerCase())){const c={id:uid('p'),name:n,gender:'f',photo:img('perf-'+slug(n),600,800)};DB.performers.push(c);Sync.push('performers','create',c)}
+      if(!DB.performers.some(c=>c.name.toLowerCase()===n.toLowerCase())){const c={id:uid('p'),name:n,gender:'f',photo:''};DB.performers.push(c);Sync.push('performers','create',c)}
      sel.add(n);q.value='';draw();
     });
    };

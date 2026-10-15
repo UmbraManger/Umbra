@@ -141,7 +141,7 @@ ${!isMovie?`<div style="margin-top:10px"><label class="flab">List Thumbnail</lab
      Object.assign(item,{title,studioId,durationMin:d.dur,scenes:d.scenes,director,actorIds,categoryIds,desc:d.desc,year:d.year,posterF:d.pA||item.posterF,posterB:d.pB||item.posterB,filePath:d.filePath||item.filePath||''});
      Sync.push('movies','update',item);
     }else{
-     const rec={id:uid('mv'),title,studioId,durationMin:d.dur,scenes:d.scenes,director,actorIds,categoryIds,fav:false,desc:d.desc,year:d.year,posterF:d.pA||img('mv-'+slug(title)+'-f',600,900),posterB:d.pB||img('mv-'+slug(title)+'-b',600,900),filePath:d.filePath||''};
+      const rec={id:uid('mv'),title,studioId,durationMin:d.dur,scenes:d.scenes,director,actorIds,categoryIds,fav:false,desc:d.desc,year:d.year,posterF:d.pA||'',posterB:d.pB||'',filePath:d.filePath||''};
      DB.movies.push(rec);Sync.push('movies','create',rec);
     }
     toast(editing?'Saved Changes':'Movie Added');
@@ -149,7 +149,7 @@ ${!isMovie?`<div style="margin-top:10px"><label class="flab">List Thumbnail</lab
      const mv=resolveMovie(d.movie,studioId);
     let covers=[d.pA,d.pB].filter(Boolean);
     if(covers.length===2&&covers[0]===covers[1])covers=[covers[0]];
-    const finalCovers=covers.length?covers:(item?.covers?.length?item.covers:[img('sc-'+slug(title)+'-a',800,450),img('sc-'+slug(title)+'-b',800,450)]);
+    const finalCovers=covers.length?covers:(item?.covers?.length?item.covers:[]);
     const thumb=Math.min(d.thumb||0,Math.max(0,finalCovers.length-1));
     if(editing){
      Object.assign(item,{title,siteId:studioId,movieId:mv?mv.id:null,durationMin:d.dur,director,actorIds,categoryIds,desc:d.desc,date:d.date,covers:finalCovers,thumb,filePath:d.filePath||item.filePath||''});
@@ -275,7 +275,7 @@ function performerForm(item){
    if(!name){$('#pf-name').classList.add('err');toast('Stage Name Is Required','alert-triangle');return false}
    const gender=$$('input[name=pfg]').find(r=>r.checked)?.value||'f';
    const rec=item||{id:uid('p')};
-   Object.assign(rec,{name,gender,aliases:titleCase($('#pf-alias').value.trim()),birth:$('#pf-birth').value||null,ethnicity:titleCase($('#pf-eth').value.trim()),nationality:titleCase($('#pf-nat').value.trim()),hair:titleCase($('#pf-hair').value.trim()),eyes:titleCase($('#pf-eyes').value.trim()),height:parseInt($('#pf-h').value)||null,weight:parseInt($('#pf-w').value)||null,careerStart:parseInt($('#pf-cs').value)||null,measurements:gender==='f'?$('#pf-meas').value.trim():null,boobs:gender==='f'?($$('input[name=pfb]').find(r=>r.checked)?.value||'Natural'):null,piercings:gender==='f'?titleCase($('#pf-pierce').value.trim()):null,tattoos:titleCase($('#pf-tat').value.trim()),twitter:$('#pf-twitter').value.trim()||null,instagram:$('#pf-instagram').value.trim()||null,onlyfans:$('#pf-onlyfans').value.trim()||null,photo:R.photo.get()||rec.photo||img('perf-'+slug(name),600,800)});
+   Object.assign(rec,{name,gender,aliases:titleCase($('#pf-alias').value.trim()),birth:$('#pf-birth').value||null,ethnicity:titleCase($('#pf-eth').value.trim()),nationality:titleCase($('#pf-nat').value.trim()),hair:titleCase($('#pf-hair').value.trim()),eyes:titleCase($('#pf-eyes').value.trim()),height:parseInt($('#pf-h').value)||null,weight:parseInt($('#pf-w').value)||null,careerStart:parseInt($('#pf-cs').value)||null,measurements:gender==='f'?$('#pf-meas').value.trim():null,boobs:gender==='f'?($$('input[name=pfb]').find(r=>r.checked)?.value||'Natural'):null,piercings:gender==='f'?titleCase($('#pf-pierce').value.trim()):null,tattoos:titleCase($('#pf-tat').value.trim()),twitter:$('#pf-twitter').value.trim()||null,instagram:$('#pf-instagram').value.trim()||null,onlyfans:$('#pf-onlyfans').value.trim()||null,photo:R.photo.get()||rec.photo||''});
    if(!item)DB.performers.push(rec);
    Sync.push('performers',editing?'update':'create',rec);
    toast('Saved');render();

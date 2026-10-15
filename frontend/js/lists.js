@@ -240,7 +240,10 @@ function continueHTML(tab){
   const items=(tab==='movies'?DB.movies:DB.scenes)
    .filter(it=>filteredIds.has(it.id))
    .map(it=>({it,p:Positions.progress(kind,it.id)}))
-   .filter(x=>x.p>0.02&&x.p<0.95)
+    // any real watch counts (positions only exist after ~3s of playback) —
+    // the old 2% floor hid short watches of long titles entirely; near-complete
+    // items stay (the player clears the position at the real end)
+    .filter(x=>x.p>0&&x.p<0.995)
    // most-recently-watched first (NOT "furthest along") so the row holds the
    // items you were last watching; items with no recency fall back to progress
    .sort((a,b)=>{

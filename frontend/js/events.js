@@ -1055,9 +1055,9 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
      const secs=(j.sections||[]).map(s=>`
       <div style="margin-bottom:18px"><div class="flab">${esc(s.label)} - ${s.groups.reduce((n,g)=>n+g.length,0)} Items</div>
       ${s.groups.map(g=>`<div style="margin-bottom:12px">
-       ${g.map(rid=>{const kind=kmap[s.kind];const it=byId(kind,rid);if(!it)return '';
-        const src=kind==='movie'?it.posterF:kind==='scene'?((it.covers||[])[0]||''):kind==='performer'?it.photo:img('dup-'+kind+it.id,80,80);
-        return `<div class="res" data-action="open" data-kind="${kind}" data-id="${it.id}"><img class="${kind==='scene'?'w':''}" src="${esc(src)}" alt=""><div><b>${esc(it.title||it.name)}</b><div class="mono">${kindLabel(kind)}</div></div><i data-lucide="arrow-up-right"></i></div>`}).join('')}
+        ${g.map(rid=>{const kind=kmap[s.kind];const it=byId(kind,rid);if(!it)return '';
+         const src=kind==='movie'?it.posterF:kind==='scene'?((it.covers||[])[0]||''):it.photo||'';
+         return `<div class="res" data-action="open" data-kind="${kind}" data-id="${it.id}">${mediaPh(src,kind==='scene'?'w':'',({movie:'film',scene:'clapperboard',performer:'user',studio:'building-2',category:'tag'})[kind]||'image')}<div><b>${esc(it.title||it.name)}</b><div class="mono">${kindLabel(kind)}</div></div><i data-lucide="arrow-up-right"></i></div>`}).join('')}
       </div>`).join('')}</div>`).join('');
      openModal([{title:'Duplicate Check',html:()=>secs||`<div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:34px 0"><i data-lucide="badge-check" style="width:30px;height:30px;color:var(--accent)"></i><span class="cmsg">No Duplicates Found.</span></div>`,
       footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`}],0,620);
@@ -1084,8 +1084,8 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    <div class="cmsg" style="margin-bottom:14px">${total} Duplicate Group${total===1?'':'s'} Found Across Movies, Scenes, Performers, Studios And Categories:</div>
    ${sections.map(s=>`<div style="margin-bottom:18px"><div class="flab">${s.label} - ${s.groups.reduce((n,g)=>n+g.length,0)} Items</div>
     ${s.groups.map(g=>`<div style="margin-bottom:12px">
-     ${g.map(x=>{const it=byId(x.kind,x.id);const src=x.kind==='movie'?it.posterF:x.kind==='scene'?((it.covers||[])[0]||''):x.kind==='performer'?it.photo:img('dup-'+x.kind+it.id,80,80);
-      return `<div class="res" data-action="open" data-kind="${x.kind}" data-id="${x.id}"><img class="${x.kind==='scene'?'w':''}" src="${esc(src)}" alt=""><div><b>${esc(x.t)}</b><div class="mono">${kindLabel(x.kind)}${x.y?' · '+esc(String(x.y)):''}</div></div><i data-lucide="arrow-up-right"></i></div>`}).join('')}
+     ${g.map(x=>{const it=byId(x.kind,x.id);const src=x.kind==='movie'?it.posterF:x.kind==='scene'?((it.covers||[])[0]||''):it.photo||'';
+      return `<div class="res" data-action="open" data-kind="${x.kind}" data-id="${x.id}">${mediaPh(src,x.kind==='scene'?'w':'',({movie:'film',scene:'clapperboard',performer:'user',studio:'building-2',category:'tag'})[x.kind]||'image')}<div><b>${esc(x.t)}</b><div class="mono">${kindLabel(x.kind)}${x.y?' · '+esc(String(x.y)):''}</div></div><i data-lucide="arrow-up-right"></i></div>`}).join('')}
     </div>`).join('')}</div>`).join('')}`
    :`<div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:34px 0"><i data-lucide="badge-check" style="width:30px;height:30px;color:var(--accent)"></i><span class="cmsg">No Duplicates Found.</span></div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`}],0,620);

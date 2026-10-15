@@ -6,10 +6,11 @@ const { createWindow } = require('./harness');
 function seed(w) {
   w.eval('Sync.on = true');
   w.eval(`
-    DB.movies.push({id:'mv-1',title:'No File Movie'});
+    DB.movies.push({id:'mv-1',title:'No File Movie',posterF:'/x/mv1.jpg'});
     DB.movies.push({id:'mv-2',title:'Has File Movie',filePath:'/x/m2.mp4'});
-    DB.scenes.push({id:'sc-1',title:'First Scene',movieId:'mv-1',filePath:'/x/s1.mp4',covers:[]});
-    DB.scenes.push({id:'sc-2',title:'Second Scene',movieId:'mv-1',filePath:'/x/s2.mp4',covers:[]});
+    DB.scenes.push({id:'sc-1',title:'First Scene',movieId:'mv-1',filePath:'/x/s1.mp4',covers:[],durationMin:20});
+    DB.scenes.push({id:'sc-2',title:'Second Scene',movieId:'mv-1',filePath:'/x/s2.mp4',covers:[],durationMin:25});
+    DB.scenes.push({id:'sc-x',title:'Lonely Scene',filePath:'/x/sx.mp4',covers:[],durationMin:99});
   `);
 }
 
@@ -43,6 +44,82 @@ test('scene chain auto-advances when a scene ends', () => {
   assert.strictEqual(vid.getAttribute('src'), '/api/media/scene/sc-2');
   const next = w.document.querySelector('#sc-chain-nav [data-chain="1"]');
   assert.ok(next.hasAttribute('disabled'), 'Next disabled on the last scene');
+  w.close();
+});
+
+test('last scene stops the chain and playing again restarts from scene 1', () => {
+  const w = createWindow();
+  seed(w);
+  w.eval("renderDetail('movie','mv-1')");
+  assert.ok(w.document.querySelector('#pwrap .p-poster-pair'),
+    'chain player shows the movie poster even with stale scene positions');
+  w.eval("Positions.map['movie:mv-1']=500");
+  w.eval("document.querySelector('#pwrap video').dispatchEvent(new Event('ended'))");
+  w.eval("document.querySelector('#pwrap video').dispatchEvent(new Event('ended'))");
+  const pos = w.document.getElementById('sc-chain-pos');
+  assert.match(pos.textContent, /Scene 2 \/ 2/, 'chain must stop on the last scene');
+  assert.strictEqual(w.eval("Positions.get('movie','mv-1')"), 0, 'finishing the last scene clears the movie position');
+  const vid = w.document.querySelector('#pwrap video');
+  assert.strictEqual(vid.getAttribute('src'), '/api/media/scene/sc-2', 'last scene must not restart');
+  w.eval("document.querySelector('#pwrap video').dispatchEvent(new Event('play'))");
+  const pos2 = w.document.getElementById('sc-chain-pos');
+  assert.match(pos2.textContent, /Scene 1 \/ 2/, 'playing again restarts from the first scene');
+  w.close();
+});
+
+test('chain playback records progress on the movie, not the scenes', () => {
+  const w = createWindow();
+  seed(w);
+  w.eval("renderDetail('movie','mv-1')");
+  w.eval("var cv=document.querySelector('#pwrap video');Object.defineProperty(cv,'duration',{value:600,configurable:true});cv.currentTime=100;cv.dispatchEvent(new Event('timeupdate'))");
+  assert.strictEqual(w.eval("Positions.get('movie','mv-1')"), 100, 'chain saves the movie position');
+  assert.strictEqual(w.eval("Positions.get('scene','sc-1')"), 0, 'chain never touches scene positions');
+  w.eval("Object.keys(Positions._t).forEach(k=>clearTimeout(Positions._t[k]))");
+  w.close();
+});
+
+test('an unfinished chain movie resumes at the right scene and offset', () => {
+  const w = createWindow();
+  seed(w);
+  w.eval("Positions.map['movie:mv-1']=1500");
+  w.eval("renderDetail('movie','mv-1')");
+  const pos = w.document.getElementById('sc-chain-pos');
+  assert.match(pos.textContent, /Scene 2 \/ 2/, 'resumes on the scene containing the position');
+  assert.ok(!w.document.querySelector('#pwrap .p-poster-pair'),
+    'no poster when resuming a half-watched chain movie');
+  assert.strictEqual(w.eval("byId('movie','mv-1').durationMin"), 45, 'movie duration learned from its scenes');
+  assert.ok(Math.abs(w.eval("Positions.progress('movie','mv-1')") - 1500 / 2700) < 1e-9,
+    'Continue Watching progress uses the scenes total');
+  w.eval("Positions.map['movie:mv-1']=2610");
+  assert.ok(w.eval("continueHTML('movies')").includes('No File Movie'),
+    'chain movie with minutes left stays in Continue Watching');
+  w.eval("Positions.map['movie:mv-1']=4");
+  assert.ok(w.eval("continueHTML('movies')").includes('No File Movie'),
+    'even a short watch shows up in Continue Watching');
+  w.eval("var rv=document.querySelector('#pwrap video');Object.defineProperty(rv,'duration',{value:1500,configurable:true});rv.dispatchEvent(new Event('loadedmetadata'))");
+  assert.strictEqual(w.eval("document.querySelector('#pwrap video').currentTime"), 300, 'seeks inside the scene to the saved offset');
+  w.eval("Sync._queue=[]");
+  w.close();
+});
+
+test('a scene learns its real duration so Continue Watching can include it', () => {
+  const w = createWindow();
+  seed(w);
+  w.eval("renderDetail('scene','sc-x')");
+  w.eval("var sv=document.querySelector('#pwrap video');Object.defineProperty(sv,'duration',{value:1234,configurable:true});sv.dispatchEvent(new Event('loadedmetadata'))");
+  assert.strictEqual(w.eval("byId('scene','sc-x').durationMin"), 21, 'wrong durationMin corrected from the file');
+  w.eval("Sync._queue=[]");
+  w.close();
+});
+
+test('watching resumes even when paused in the last seconds', () => {
+  const w = createWindow();
+  seed(w);
+  w.eval("Positions.map['scene:sc-1']=1190");
+  w.eval("renderDetail('scene','sc-1')");
+  w.eval("var tv=document.querySelector('#pwrap video');Object.defineProperty(tv,'duration',{value:1200,configurable:true});tv.dispatchEvent(new Event('loadedmetadata'))");
+  assert.strictEqual(w.eval("document.querySelector('#pwrap video').currentTime"), 1190,
+    'a position 10s from the end still resumes');
   w.close();
 });
 

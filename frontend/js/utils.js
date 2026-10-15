@@ -3,7 +3,7 @@
 const $=(s,c=document)=>c.querySelector(s);
 const $$=(s,c=document)=>[...c.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-const img=(seed,w,h)=>`https://picsum.photos/seed/${encodeURIComponent(seed)}/${w}/${h}.jpg`;
+const mediaPh=(src,cls,icon)=>src?`<img class="${cls}" src="${esc(src)}" loading="lazy" alt="" onload="this.naturalWidth>this.naturalHeight&&(this.style.objectPosition='97% center')">`:`<div class="media-ph ${cls}"><i data-lucide="${icon}"></i></div>`;
 const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
 let _seq=0;const uid=p=>p+'-'+(++_seq)+'-'+Math.random().toString(36).slice(2,5);
 const pad=n=>String(Math.floor(n)).padStart(2,'0');
