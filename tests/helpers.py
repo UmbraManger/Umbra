@@ -43,9 +43,9 @@ def known_bug(fn):
 
     Normally this is unittest.expectedFailure: the suite stays green while the bug
     exists, and turns RED ("unexpected success") the moment someone fixes it, which is
-    the reminder to delete the decorator. Set OBSCURA_SHOW_BUGS=1 to run these tests
+    the reminder to delete the decorator. Set UMBRA_SHOW_BUGS=1 to run these tests
     as ordinary tests and see the real failure output."""
-    if os.environ.get("OBSCURA_SHOW_BUGS"):
+    if os.environ.get("UMBRA_SHOW_BUGS"):
         return fn
     return unittest.expectedFailure(fn)
 
@@ -62,14 +62,14 @@ class IsolatedCase(unittest.TestCase):
     # so tests that need a pre-built database file set auto_connect = False.
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix="obscura_test_")
+        self._tmp = tempfile.mkdtemp(prefix="umbra_test_")
         self.data = os.path.join(self._tmp, "data")
         self._saved = {
             "db": {k: getattr(db, k) for k in
                    ("DATA_DIR", "POSTER_DIR", "SCRAPER_DIR", "DB_PATH")},
             "crypto": {k: getattr(crypto, k) for k in ("ENC_DIR", "META", "_best_kdf")},
             "scanner": scanner.RESUME,
-            "scrapers": scrapers.META,
+            "scrapers": (scrapers.META, scrapers.REMOVED),
         }
         db.close()
         # Fresh reentrant lock per test (matches db.connect's contract, bug #1).
@@ -85,6 +85,7 @@ class IsolatedCase(unittest.TestCase):
             crypto._best_kdf = lambda: dict(FAST_KDF)
         scanner.RESUME = os.path.join(self.data, "scanstate.json")
         scrapers.META = os.path.join(db.SCRAPER_DIR, "meta.json")
+        scrapers.REMOVED = os.path.join(db.SCRAPER_DIR, "removed.json")
         db.ensure_dirs()
         if self.auto_connect:
             db.connect()
@@ -97,7 +98,7 @@ class IsolatedCase(unittest.TestCase):
         for k, v in self._saved["crypto"].items():
             setattr(crypto, k, v)
         scanner.RESUME = self._saved["scanner"]
-        scrapers.META = self._saved["scrapers"]
+        scrapers.META, scrapers.REMOVED = self._saved["scrapers"]
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     # small conveniences ------------------------------------------------

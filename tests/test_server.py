@@ -32,7 +32,7 @@ class ServerCase(IsolatedCase):
             _server = importlib.import_module("server")
         self.srv = _server
         self.client = TestClient(self.srv.app, base_url="http://127.0.0.1")
-        self.h = {"X-Obscura-Token": self.srv.API_TOKEN}
+        self.h = {"X-Umbra-Token": self.srv.API_TOKEN}
 
     def create_movie(self, **kw):
         body = {"title": "Alpha", "year": 2001, **kw}
@@ -51,7 +51,7 @@ class SecurityTests(ServerCase):
         self.assertEqual((r.status_code, r.json()["ok"]), (200, True))
 
     def test_wrong_token_is_rejected(self):
-        r = self.client.get("/api/ping", headers={"X-Obscura-Token": "nope"})
+        r = self.client.get("/api/ping", headers={"X-Umbra-Token": "nope"})
         self.assertEqual(r.status_code, 403)
 
     def test_foreign_host_and_origin_are_rejected(self):
@@ -135,6 +135,47 @@ class ScanProgressTests(ServerCase):
         self.assertFalse(p["active"], "must not be left active after the scan")
         self.assertEqual((p["done"], p["total"]), (1, 1))
 
+    def test_import_from_scan_creates_the_record(self):
+        """The import endpoint runs its file/poster work in the worker pool
+        (backend freeze fix) — a round-trip still stores a real record."""
+        d = os.path.join(self._tmp, "lib")
+        os.makedirs(d)
+        open(os.path.join(d, "film.mp4"), "wb").close()
+        r = self.client.post("/api/scan/import",
+                             json={"path": os.path.join(d, "film.mp4"),
+                                   "kind": "movie", "title": "Film",
+                                   "duration_min": 95}, headers=self.h)
+        self.assertEqual(r.status_code, 200, r.text)
+        rec = r.json()["record"]
+        lib = self.library()
+        match = [m for m in lib["movies"] if m["id"] == rec["id"]]
+        self.assertTrue(match, "the imported record must appear in the library")
+        self.assertIn("film.mp4", (match[0].get("filePath")
+                                   or match[0].get("file_path") or "").replace("\\", "/"))
+
+
+class MediaOpenTests(ServerCase):
+    def test_open_says_why_when_no_file_is_linked(self):
+        """A bare 404 leaves the player unable to explain itself to the user."""
+        mid = self.create_movie()
+        r = self.client.post(f"/api/media/movie/{mid}/open", headers=self.h)
+        self.assertEqual(r.status_code, 404)
+        self.assertIn("no video file linked", r.json()["detail"])
+
+    def test_open_hands_the_real_file_to_the_os_player(self):
+        path = os.path.join(self._tmp, "film.mp4")
+        with open(path, "wb") as f:
+            f.write(b"\x00")
+        mid = self.create_movie()
+        import db
+        db.execute("UPDATE movies SET file_path=? WHERE id=?", (path, mid))
+        import media as media_engine
+        from unittest import mock
+        with mock.patch.object(media_engine, "open_with_os", return_value=True) as m:
+            r = self.client.post(f"/api/media/movie/{mid}/open", headers=self.h)
+        self.assertEqual(r.status_code, 200, r.text)
+        m.assert_called_once_with(path)
+
 
 class ImageTests(ServerCase):
     def test_upload_then_fetch(self):
@@ -143,6 +184,58 @@ class ImageTests(ServerCase):
         self.assertEqual(r.status_code, 200, r.text)
         got = self.client.get(r.json()["url"], headers=self.h)
         self.assertEqual((got.status_code, got.content), (200, b"\x89PNGdata"))
+
+    def _blob_path(self, url):
+        img_id = url.rsplit("/", 1)[-1]
+        import crypto
+        return os.path.join(crypto.ENC_DIR, img_id + ".bin")
+
+    def test_replacing_a_cover_deletes_the_previous_blob(self):
+        import crypto
+        u1 = self.client.post("/api/images", headers=self.h,
+                              files={"file": ("a.png", b"AAA", "image/png")}).json()["url"]
+        u2 = self.client.post("/api/images", headers=self.h,
+                              files={"file": ("b.png", b"BBB", "image/png")}).json()["url"]
+        mid = self.create_movie(posterF=u1)
+        self.client.put("/api/movies", json={"id": mid, "posterF": u2}, headers=self.h)
+        self.assertFalse(os.path.exists(self._blob_path(u1)), "old cover blob must be deleted")
+        self.assertTrue(os.path.exists(self._blob_path(u2)))
+        self.assertEqual(self.client.get(u1, headers=self.h).status_code, 404)
+
+    def test_unchanged_update_keeps_the_blob(self):
+        u1 = self.client.post("/api/images", headers=self.h,
+                              files={"file": ("a.png", b"AAA", "image/png")}).json()["url"]
+        mid = self.create_movie(posterF=u1)
+        self.client.put("/api/movies", json={"id": mid, "title": "Retitle"}, headers=self.h)
+        self.assertTrue(os.path.exists(self._blob_path(u1)))
+
+    def test_clearing_a_cover_deletes_the_blob(self):
+        u1 = self.client.post("/api/images", headers=self.h,
+                              files={"file": ("a.png", b"AAA", "image/png")}).json()["url"]
+        mid = self.create_movie(posterF=u1)
+        self.client.put("/api/movies", json={"id": mid, "posterF": ""}, headers=self.h)
+        self.assertFalse(os.path.exists(self._blob_path(u1)))
+
+    def test_prune_removes_unreferenced_blobs(self):
+        u1 = self.client.post("/api/images", headers=self.h,
+                              files={"file": ("a.png", b"AAA", "image/png")}).json()["url"]
+        mid = self.create_movie(posterF=u1)
+        orphan = self.client.post("/api/images", headers=self.h,
+                                  files={"file": ("z.png", b"ZZZ", "image/png")}).json()["url"]
+        n = self.client.post("/api/images/prune", headers=self.h).json()["pruned"]
+        self.assertEqual(n, 1, "the orphan is pruned, the referenced blob survives")
+        for url in (u1, orphan):
+            got = self.client.get(url, headers=self.h)
+            self.assertEqual((got.status_code == 200), url == u1)
+
+    def test_deleting_a_performer_deletes_its_photo_blob(self):
+        import crypto
+        u1 = self.client.post("/api/images", headers=self.h,
+                              files={"file": ("a.png", b"AAA", "image/png")}).json()["url"]
+        pid = self.client.post("/api/performers", json={"name": "X", "photo": u1},
+                               headers=self.h).json()["id"]
+        self.client.delete(f"/api/performers/{pid}", headers=self.h)
+        self.assertFalse(os.path.exists(os.path.join(crypto.ENC_DIR, u1.rsplit("/", 1)[-1] + ".bin")))
 
 
 class DestructiveEndpointTests(ServerCase):

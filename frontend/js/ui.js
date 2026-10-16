@@ -1,5 +1,13 @@
 "use strict";
 /* ===== ABOUT PAGE ===== */
+ // Short feature blurbs — kept in one place so the About page stays one template.
+const ABOUT_FEATURES=[
+ ['library','Movies & Scenes','Full library with detail pages, cast, categories, playlists and bulk actions'],
+ ['folder-search','Scanner','Scan local folders with ffprobe durations, poster pick-up and duplicate detection'],
+ ['play','Player','Internal player with resume, scene-chain playback, subtitles and an OS-default-player mode'],
+ ['search','Scrapers','~25 bundled site scrapers plus AI lookup fill in metadata, covers and galleries locally'],
+ ['shield','Privacy','Everything stays on this device - optional image encryption, app lock and a server-side vault'],
+ ['hard-drive','Portable','Runs as a native window from any folder. The data folder next to the exe is the whole install - move it, back it up, done.']];
 function renderAbout(){
  const counts=[['Movies',DB.movies.length],['Scenes',DB.scenes.length],['Performers',DB.performers.length],['Studios',DB.studios.length],['Categories',DB.categories.length]];
  const totalItems=counts.reduce((s,c)=>s+c[1],0);
@@ -7,31 +15,50 @@ function renderAbout(){
  const syncStatus=Sync.on?'Active · Backend Connected':'Local Only';
  let storageSize='-';
  try{const raw=localStorage.getItem('obscura:v1');if(raw)storageSize=((new Blob([raw]).size)/1024).toFixed(1)+' KB'}catch(e){}
- const stats=[['Version','0.9'],['Total Items',totalItems],['Favorites',favs],['Storage',storageSize],
+  const stats=[['Version',APP_VERSION],['Total Items',totalItems],['Favorites',favs],['Storage',storageSize],
+   ['Playlists',(DB.playlists||[]).length],['Resume Points',Object.keys((Positions&&Positions.map)||{}).length],
   ...counts.map(c=>[c[0],c[1]])];
- $('#main').innerHTML=`<div class="page">
-  ${pageHeadHTML('about')}
-  <div class="scat" id="cat-about"><div class="scat-head"><i data-lucide="info"></i><span>About</span></div>
-   <div class="ssec"><div class="shead"><img class="simg" src="img/umbra.png" alt=""><h2>Umbra</h2><span class="mono">Private Media Manager</span></div>
-    <div style="padding:4px 0 16px;color:var(--muted);font-size:13px;line-height:1.6">A self-hosted, private media library for organizing movies, scenes, performers, and studios. Your data stays on your device${Sync.on?' and synced via your backend':''}.</div>
-    <div class="counts" style="margin-bottom:20px">${stats.map(s=>`<div class="cnt"><div class="mono">${s[0]}</div><div class="cv">${s[1]}</div></div>`).join('')}</div>
-    <div style="margin-bottom:16px"><div class="flab">Sync</div><div style="font-size:13px;color:var(--muted)">${syncStatus}</div></div>
-    <div style="margin-bottom:16px"><div class="flab">Theme</div><div style="font-size:13px;color:var(--muted)">${settings.theme==='dark'?'Dark':'Light'}${settings.adv?.accent?' · Accent: '+esc(settings.adv.accent):''}</div></div>
-    <div style="margin-bottom:16px"><div class="flab">Image Protection</div><div style="font-size:13px;color:var(--muted)">${settings.imgProt?.on?'Encrypted':'Off'}</div></div>
-    <div class="flab">Data</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-     <button class="btn" data-action="export-data"><i data-lucide="download"></i>Export Library</button>
-     <button class="btn" data-action="clear-data"><i data-lucide="trash-2"></i>Clear All Data</button>
+  // Engine label: the native window is WebView2; browser (debug) mode shows its UA family.
+  const native=!!(window.pywebview&&window.pywebview.platform);
+  const ua=(navigator.userAgent.match(/(Edg|Chrome|Firefox|Safari)\/[\d.]+/i)||[''])[0];
+  const engine=native?'WebView2 (Edge)':'Raw '+((ua&&/^[A-Za-z]/.test(ua[0]))?ua:'browser');
+  const lockOn=!!(settings.lock&&settings.lock.on);
+  const setline=(l,v)=>`<div class="setline"><span>${l}</span><span style="color:var(--text)">${v}</span></div>`;
+  $('#main').innerHTML=`<div class="page">
+   ${pageHeadHTML('about')}
+   <div class="scat" id="cat-about"><div class="scat-head"><i data-lucide="info"></i><span>About</span></div>
+    <div class="ssec"><div class="shead"><img class="simg" src="img/umbra.png" alt=""><h2>Umbra</h2><span class="mono">Private Media Manager · v${APP_VERSION}</span></div>
+     <div style="padding:4px 0 16px;color:var(--muted);font-size:13px;line-height:1.6">A self-hosted, private media library for organizing movies, scenes, performers, and studios. FastAPI + SQLite behind a native desktop window; your library lives in a local data folder${Sync.on?' and syncs with your backend':''}. No telemetry, no accounts, no cloud.</div>
+     <div class="counts" style="margin-bottom:20px">${stats.map(s=>`<div class="cnt"><div class="mono">${s[0]}</div><div class="cv">${s[1]}</div></div>`).join('')}</div>
     </div>
-    <p class="note" style="margin-top:16px">Umbra stores everything in your browser's local storage. Export regularly to keep backups. No telemetry, no accounts, no cloud - unless you set up sync.</p>
+    <div class="ssec"><div class="shead"><i data-lucide="layers"></i><h2>What's Inside</h2></div>
+     <div class="counts" style="margin-bottom:14px">${ABOUT_FEATURES.map(f=>`<div class="cnt"><div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><i data-lucide="${f[0]}" style="width:15px;height:15px;color:var(--accent)"></i><b style="font-size:13.5px">${f[1]}</b></div><span style="font-size:12.5px;color:var(--muted);line-height:1.5">${f[2]}</span></div>`).join('')}</div>
+    </div>
+    <div class="ssec"><div class="shead"><i data-lucide="cpu"></i><h2>System</h2></div>
+     ${setline('App Version','Umbra v'+APP_VERSION)}
+     ${setline('Interface Engine',engine)}
+     ${setline('Sync',syncStatus)}
+     ${setline('Player Mode',settings.player==='external'?'OS Default Player':'Internal Player')}
+     ${setline('Theme',(settings.theme==='dark'?'Dark':'Light')+(settings.adv&&settings.adv.accent?' · Accent '+esc(settings.adv.accent):''))}
+     ${setline('Image Protection',settings.imgProt&&settings.imgProt.on?'Encrypted':'Off')}
+     ${setline('App Lock',lockOn?'Armed':'Off')}
+     ${setline('Scan Directories',(settings.dirs||[]).length)}
+     ${setline('Installed Scrapers',(settings.scrapers||[]).length+' ('+(settings.scrapers||[]).filter(s=>s.enabled).length+' Enabled)')}
+    </div>
+    <div class="ssec"><div class="shead"><i data-lucide="database"></i><h2>Data</h2></div>
+     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px">
+      <button class="btn" data-action="export-data"><i data-lucide="download"></i>Export Library</button>
+      <button class="btn" data-action="clear-data"><i data-lucide="trash-2"></i>Clear All Data</button>
+     </div>
+     <p class="note" style="margin-top:16px">Umbra keeps everything in the local data folder and browser storage. Export regularly to keep backups - or use a full Settings › Storage backup whenever the backend is connected. Nothing ever leaves this machine unless you set up sync.</p>
+    </div>
    </div>
-  </div>
- </div>`;
+  </div>`;
  icons();
  $$('[data-action=export-data]').forEach(b=>b.addEventListener('click',()=>{
   const data={movies:DB.movies,scenes:DB.scenes,performers:DB.performers,studios:DB.studios,categories:DB.categories,settings};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='obscura-library.json';a.click();URL.revokeObjectURL(a.href);toast('Library Exported','download');
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='umbra-library.json';a.click();URL.revokeObjectURL(a.href);toast('Library Exported','download');
  }));
  $$('[data-action=clear-data]').forEach(b=>b.addEventListener('click',()=>{
   if(!confirm('Clear All Data? This Cannot Be Undone.'))return;

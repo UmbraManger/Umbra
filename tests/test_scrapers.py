@@ -44,6 +44,57 @@ class ManagementTests(IsolatedCase):
         self.assertEqual(os.listdir(db.SCRAPER_DIR), ["meta.json"])
 
 
+class BundledRemovalTests(IsolatedCase):
+    def test_removing_a_bundled_scraper_tombstones_the_file(self):
+        fn = "demo_scraper.py"
+        with open(os.path.join(db.SCRAPER_DIR, fn), "wb") as f:
+            f.write(b"x")
+        sid = "bundled-demo"
+        scrapers._save_meta([{"id": sid, "name": "demo", "file": fn,
+                              "type": "python", "kind": "movie",
+                              "enabled": True, "structure": None}])
+        scrapers.remove(sid)
+        self.assertEqual(scrapers.list_all(), [])
+        self.assertTrue(os.path.exists(os.path.join(db.SCRAPER_DIR, "removed.json")))
+        self.assertIn(fn, scrapers._removed())
+
+    def test_install_bundled_respects_the_tombstone(self):
+        import sys
+        bundle = os.path.join(db.SCRAPER_DIR, "scrapers")
+        os.makedirs(bundle, exist_ok=True)
+        for fn in ("aaa.py", "gone.py"):
+            with open(os.path.join(bundle, fn), "wb") as f:
+                f.write(PY_SCRAPER)
+        scrapers._mark_removed("gone.py")
+        with mock.patch.object(sys, "frozen", True, create=True), \
+             mock.patch.object(sys, "_MEIPASS", db.SCRAPER_DIR, create=True):
+            scrapers.install_bundled()
+        self.assertEqual([s["file"] for s in scrapers._meta()], ["aaa.py"],
+                         "the removed scraper must not be reinstalled on the next boot")
+
+    def test_a_burst_of_parallel_deletes_keeps_every_tombstone(self):
+        """Deleting many bundled scrapers rapid-fire (how the UI burst arrives via
+        the threadpool) must not let last-writer-wins resurrect the others: every
+        delete tombstones its file and every meta entry disappears."""
+        import threading
+        n = 12
+        meta = []
+        for i in range(n):
+            sid, fn = f"bundled-s{i}", f"s{i}.py"
+            with open(os.path.join(db.SCRAPER_DIR, fn), "wb") as f:
+                f.write(b"x")
+            meta.append({"id": sid, "name": f"s{i}", "file": fn, "type": "python",
+                         "kind": "movie", "enabled": False, "structure": None})
+        scrapers._save_meta(meta)
+        threads = [threading.Thread(target=scrapers.remove, args=(f"bundled-s{i}",))
+                   for i in range(n)]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        self.assertEqual(scrapers.list_all(), [], "no meta entry survives the burst")
+        self.assertEqual(scrapers._removed(), {f"s{i}.py" for i in range(n)},
+                         "every tombstone lands, none is lost to a stale rewrite")
+
+
 class PythonScraperTests(IsolatedCase):
     def test_python_scrapers_are_off_by_default(self):
         sid = scrapers.add("s.py", PY_SCRAPER, "movie")

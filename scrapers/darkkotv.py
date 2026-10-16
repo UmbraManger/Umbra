@@ -1,4 +1,4 @@
-"""DarkkoTV scraper — Obscura-compatible.
+"""DarkkoTV scraper — Umbra-compatible.
 
 Supports: scene-by-url, scene-by-name
 Sites: darkkotv.com

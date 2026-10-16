@@ -14,5 +14,5 @@ cryptography>=43        # Argon2id support (falls back to PBKDF2 if unavailable)
 keyring
 pywebview
 lxml                   # used by 11 runtime-loaded scrapers/ files; PyInstaller
-                       # cannot see those, so backend/Obscura.spec lists it as
+                       # cannot see those, so backend/Umbra.spec lists it as
                        # a hidden import too (otherwise frozen lookups fail)

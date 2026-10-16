@@ -42,9 +42,9 @@
  (function(){
   var TK=null;
   try{
-   TK=sessionStorage.getItem('obscura:token')||'';
-   if(!TK){
-    var m=document.cookie.match(/(?:^|;\s*)obscura_token=([^;]*)/);
+   TK=sessionStorage.getItem('umbra:token')||'';
+    if(!TK){
+     var m=document.cookie.match(/(?:^|;\s*)umbra_token=([^;]*)/);
     TK=m?decodeURIComponent(m[1]):'';
    }
    if(!TK){
@@ -52,13 +52,13 @@
     if(TK){try{history.replaceState(null,'',location.pathname+location.hash)}catch(e){}}
    }
   }catch(e){}
-  if(TK){try{sessionStorage.setItem('obscura:token',TK)}catch(e){}}
-  window.__OBSCURA_TOKEN=TK;
+  if(TK){try{sessionStorage.setItem('umbra:token',TK)}catch(e){}}
+  window.__UMBRA_TOKEN=TK;
   // native-window JS bridge (belt-and-braces next to the cookie)
   try{
    if(window.pywebview&&window.pywebview.api&&window.pywebview.api.get_token){
     window.pywebview.api.get_token().then(function(v){
-     if(v){window.__OBSCURA_TOKEN=v;try{sessionStorage.setItem('obscura:token',v)}catch(e){}}
+     if(v){window.__UMBRA_TOKEN=v;try{sessionStorage.setItem('umbra:token',v)}catch(e){}}
     });
    }
   }catch(e){}
@@ -69,11 +69,11 @@
     var u=(typeof input==='string')?input:((input&&input.url)||'');
     var abs=(u.indexOf('http')===0)?u:(location.origin+u);
     if(abs.indexOf(location.origin+'/api/')===0){
-     var tok=window.__OBSCURA_TOKEN||TK;
+     var tok=window.__UMBRA_TOKEN||TK;
      if(tok){
       init=init?Object.assign({},init):{};
       var h=new Headers(init.headers||{});
-      h.set('X-Obscura-Token',tok);
+      h.set('X-Umbra-Token',tok);
       init.headers=h;
      }
      return _f(u,init);
@@ -106,8 +106,8 @@ input,select,textarea{font-family:inherit;color:var(--text)}img{display:block}sv
 #titlebar{display:none;align-items:center;gap:10px;height:34px;padding-left:14px;background:var(--bg);border-bottom:1px solid var(--line);position:relative;z-index:400;user-select:none}
 body.frameless #titlebar{display:flex}
 body.frameless #app{height:calc(100vh - 34px)}
-.tb-name{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
-.tb-logo{width:17px;height:17px;border-radius:4px;object-fit:cover}
+.tb-name{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.tb-name .tb-ver{color:var(--faint);letter-spacing:.08em}
 .tb-btns{margin-left:auto;display:flex;height:100%}
 .tb-btns button{width:46px;height:100%;display:grid;place-items:center;color:var(--muted);transition:background .12s,color .12s}
 .tb-btns button:hover{background:var(--surface2);color:var(--text)}
@@ -707,8 +707,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radiu
 </head>
 <body>
 <div id="titlebar" class="pywebview-drag-region">
- <img class="tb-logo" src="img/favicon.png" alt="">
- <span class="tb-name">Umbra</span>
+ <span class="tb-name">Umbra <span class="tb-ver">1.0</span></span>
  <div class="tb-btns">
   <button id="tb-min" title="Minimize" aria-label="Minimize"><i data-lucide="minus"></i></button>
   <button id="tb-max" title="Maximize" aria-label="Maximize"><i data-lucide="square"></i></button>

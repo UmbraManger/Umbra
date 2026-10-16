@@ -1,4 +1,4 @@
-"""Erotik.com scraper — Obscura-compatible.
+"""Erotik.com scraper — Umbra-compatible.
 
 Supports: movie-by-url, movie-by-name
 API: https://api.erotik.com/content/movies
@@ -143,7 +143,7 @@ def _search(query):
 
 
 def scrape(title="", url="", html="", **kwargs):
-    """Obscura scraper entry point."""
+    """Umbra scraper entry point."""
     if url:
         result = _get_movie_by_url(url)
         if result:

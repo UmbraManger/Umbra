@@ -3,7 +3,7 @@ Python contract:  the file must define  scrape(title="", url="", html="") -> dic
                   (an optional kind="" parameter is also passed through when the
                   scraper's signature accepts it, or via **kwargs)
 YAML contract:    selectors mapping — see example at the bottom."""
-import os, json, uuid, re, inspect
+import os, json, uuid, re, inspect, threading
 from urllib.parse import urlparse, quote
 import importlib.util
 import requests, yaml
@@ -11,7 +11,43 @@ from bs4 import BeautifulSoup
 import db
 import net_guard
 
+# Every meta.json mutation is a read-modify-write; bursting several scrapers
+# (deleting many rows in one go, install_bundled racing a toggle) must not let
+# last-writer-wins undo the others — so all mutators serialize on this lock.
+_META_LOCK = threading.RLock()
+
+def _locked(fn):
+    def wrapper(*a, **k):
+        with _META_LOCK:
+            return fn(*a, **k)
+    wrapper.__name__ = fn.__name__
+    wrapper.__doc__ = fn.__doc__
+    return wrapper
+
 META = os.path.join(db.SCRAPER_DIR, "meta.json")
+# Tombstone for deliberately deleted bundled scrapers: their files ship inside
+# the frozen bundle, so install_bundled() would reinstall one on every boot
+# unless the fact the user removed it is recorded here. User-uploaded scrapers
+# (uuid names) never come back on their own and need no tombstone.
+REMOVED = os.path.join(db.SCRAPER_DIR, "removed.json")
+
+def _removed() -> set:
+    try:
+        with open(REMOVED, encoding="utf-8") as f:
+            v = json.load(f)
+        return {x for x in v if isinstance(x, str)}
+    except Exception:
+        return set()
+
+def _mark_removed(filename: str) -> None:
+    try:
+        os.makedirs(db.SCRAPER_DIR, exist_ok=True)
+        # merge BEFORE open("w") truncates the very file being read back
+        merged = sorted(_removed() | {filename})
+        with open(REMOVED, "w", encoding="utf-8") as f:
+            json.dump(merged, f)
+    except OSError:
+        pass
 
 def _meta() -> list:
     try:
@@ -43,6 +79,7 @@ def _scraper_path(s: dict) -> str | None:
     root = os.path.realpath(db.SCRAPER_DIR)
     return p if os.path.dirname(p) == root else None
 
+@_locked
 def add(filename: str, content: bytes, kind: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower()
     if ext not in ("py", "yml", "yaml"):
@@ -58,6 +95,7 @@ def add(filename: str, content: bytes, kind: str) -> str:
     _save_meta(meta)
     return fid
 
+@_locked
 def remove(sid):
     for s in _meta():
         if s["id"] == sid:
@@ -65,14 +103,18 @@ def remove(sid):
             if p:
                 try: os.remove(p)
                 except OSError: pass
+            if str(sid).startswith("bundled-") and s.get("file"):
+                _mark_removed(s["file"])
     _save_meta([s for s in _meta() if s["id"] != sid])
 
+@_locked
 def toggle(sid):
     meta = _meta()
     for s in meta:
         if s["id"] == sid: s["enabled"] = not s.get("enabled", True)
     _save_meta(meta)
 
+@_locked
 def set_structure(sid, structure: dict):
     meta = _meta()
     for s in meta:
@@ -85,7 +127,7 @@ def run_python(path: str, payload: dict) -> dict:
         raise ValueError("Python scrapers are disabled — enable "
                          "Settings › External Scrapers › Python Scrapers "
                          "(they execute as local code)")
-    spec = importlib.util.spec_from_file_location("obscura_scraper_" + uuid.uuid4().hex, path)
+    spec = importlib.util.spec_from_file_location("umbra_scraper_" + uuid.uuid4().hex, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     if not hasattr(mod, "scrape"):
@@ -118,7 +160,7 @@ def run_yaml(path: str, title: str = "", url: str = "") -> dict:
         raise ValueError("blocked unsafe scraper target URL (private/loopback address)")
     # safe_get re-validates every redirect hop (P2: Gap 2, blind redirects).
     r = net_guard.safe_get(requests, target, timeout=25,
-                           headers={"User-Agent": "Mozilla/5.0 (Obscura)"})
+                           headers={"User-Agent": "Mozilla/5.0 (Umbra)"})
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
     out = {}
@@ -134,6 +176,7 @@ def run_yaml(path: str, title: str = "", url: str = "") -> dict:
         if val not in (None, ""): out[key] = val
     return out
 
+@_locked
 def install_bundled() -> None:
     """Frozen build: copy the scraper library shipped inside the bundle
     (_MEIPASS/scrapers) into data/scrapers and register it in meta.json, so the
@@ -150,10 +193,13 @@ def install_bundled() -> None:
         return
     os.makedirs(db.SCRAPER_DIR, exist_ok=True)
     meta = _meta()
+    removed = _removed()
     known = {s.get("file") for s in meta}
     changed = False
     for fn in sorted(os.listdir(src)):
         if not fn.endswith(".py"):
+            continue
+        if fn in removed:      # deleted by the user — stays deleted (#no-resurrect)
             continue
         with open(os.path.join(src, fn), "rb") as f:
             content = f.read()

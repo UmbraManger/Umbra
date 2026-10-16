@@ -1,5 +1,8 @@
 "use strict";
 /* ===== UTILS ===== */
+// Bumping the release: mirror the version in index.html's title bar,
+// backend/server.py (FastAPI title + /api/ping) and backend/pyproject.toml.
+const APP_VERSION='1.0';
 const $=(s,c=document)=>c.querySelector(s);
 const $$=(s,c=document)=>[...c.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -177,9 +180,22 @@ async function encToObjectURL(id){
  }catch(e){return null}
 }
 function encBytes(){let n=0;for(const id in encStore){const r=encStore[id];if(!r||typeof r.iv!=='string'||typeof r.data!=='string')continue;n+=(r.iv.length+r.data.length)/2}return n}
+// Drop local protected images no record references anymore (replaced covers).
+function pruneEncStore(){
+ const hay=(typeof DB!=='undefined'&&DB)?JSON.stringify(DB):'';
+ let n=0;
+ for(const id of Object.keys(encStore)){if(!hay.includes('"enc://'+id+'"')){delete encStore[id];n++}}
+ if(n)saveEncStore();
+ return n;
+}
 function clearImageCache(rehydrate){
  encURLCache.forEach(u=>{try{URL.revokeObjectURL(u)}catch(e){}});encURLCache.clear();
  encKey=null;
+ const n=pruneEncStore();
+ if(n)setTimeout(()=>toast(n+' Unused Local Image'+(n===1?'':'s')+' Removed','eraser'),0);
+ if(typeof Sync!=='undefined'&&Sync&&Sync.on)fetch('/api/images/prune',{method:'POST'}).then(r=>r.json()).then(j=>{
+  if(j&&j.pruned)setTimeout(()=>toast(j.pruned+' Unreferenced Backend Image'+(j.pruned===1?'':'s')+' Removed','eraser'),0);
+ }).catch(()=>{});
  if(rehydrate&&settings.imgProt&&settings.imgProt.on)hydrateEncImages(document);
 }
 const hydrating=new Set();

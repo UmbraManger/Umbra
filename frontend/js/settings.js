@@ -14,8 +14,8 @@ function renderSettings(){
  const protoPills=PROXY_PROTOS.map(([v,lb])=>`<label class="radioline"><input type="radio" name="pxproto" value="${v}" ${(px.proto||'http')===v?'checked':''}><span class="dot"></span>${lb}</label>`).join('');
  const accentSwatches=ACCENTS.map(([c,lb])=>`<button type="button" class="swatch ${adv.accent===c?'on':''}" style="--sw:${c};--swi:${inkFor(c)}" data-action="adv-accent" data-v="${c}" title="${lb}"><i data-lucide="${adv.accent===c?'check':'x'}" style="${adv.accent===c?'':'display:none'}"></i></button>`).join('');
  const bgSwatches=BACKGROUNDS.map(([c,lb])=>`<button type="button" class="swatch sq ${adv.background===c?'on':''}" style="--sw:${c};--swi:${inkFor(c)}" data-action="adv-bg" data-v="${c}" title="${lb}"><i data-lucide="${adv.background===c?'check':'x'}" style="${adv.background===c?'':'display:none'}"></i></button>`).join('');
- const fontPills=FONTS.map(([v,lb])=>`<label class="radioline"><input type="radio" name="advfont" value="${v}" ${(adv.font||'grotesk')===v?'checked':''} data-action="adv-font"><span class="dot"></span>${lb}</label>`).join('');
- const borderPills=BORDERS.map(([v,lb])=>`<label class="radioline"><input type="radio" name="advborder" value="${v}" ${(adv.border||'1')===v?'checked':''} data-action="adv-border"><span class="dot"></span>${lb}</label>`).join('');
+  const fontPills=FONTS.map(([v,lb])=>`<label class="radioline" for="advfont-${slug(v)}"><input type="radio" id="advfont-${slug(v)}" name="advfont" value="${v}" ${(adv.font||'grotesk')===v?'checked':''} data-action="adv-font"><span class="dot"></span>${lb}</label>`).join('');
+  const borderPills=BORDERS.map(([v,lb])=>`<label class="radioline" for="advborder-${slug(v)}"><input type="radio" id="advborder-${slug(v)}" name="advborder" value="${v}" ${(adv.border||'1')===v?'checked':''} data-action="adv-border"><span class="dot"></span>${lb}</label>`).join('');
  const srcRows=KIND_LIST.flatMap(kind=>(settings.sources[kind]||[]).map(s=>`
   <div class="srcrow"><i data-lucide="${kindIcon(kind)}"></i><span>${esc(s.name)}<span class="dim"> · ${esc(s.url)}</span></span><span class="kind">${kindLabel(kind)}</span><button class="tx" data-action="src-del" data-kind="${kind}" data-i="${s.i}"><i data-lucide="x"></i></button></div>`)).join('');
  const scraperRows=settings.scrapers.map(s=>`
@@ -57,8 +57,8 @@ function renderSettings(){
  </div>
  <div class="scat" id="cat-playback"><div class="scat-head"><i data-lucide="monitor-play"></i><span>Playback & Media</span></div>
   <div class="ssec"><div class="shead"><i data-lucide="monitor-play"></i><h2>Playback</h2><span class="mono">Player</span></div>
-   <label class="radioline"><input type="radio" name="pl" ${settings.player==='internal'?'checked':''} data-action="set-player" data-v="internal"><span class="dot"></span>Internal Player</label>
-   <label class="radioline"><input type="radio" name="pl" ${settings.player==='external'?'checked':''} data-action="set-player" data-v="external"><span class="dot"></span>OS Default Player</label>
+    <label class="radioline" for="pl-int"><input type="radio" id="pl-int" name="pl" ${settings.player==='internal'?'checked':''} data-action="set-player" data-v="internal"><span class="dot"></span>Internal Player</label>
+    <label class="radioline" for="pl-ext"><input type="radio" id="pl-ext" name="pl" ${settings.player==='external'?'checked':''} data-action="set-player" data-v="external"><span class="dot"></span>OS Default Player</label>
    <p class="note" style="margin-top:12px">The Internal Player Streams Real Video Files From The Backend (4K, x265/x264, Multiple Audio Tracks, Sidecar Subtitles). "OS Default Player" Hands The File To Your System Player. Install FFmpeg For Real Codec Details.</p></div>
   <div class="ssec"><div class="shead"><i data-lucide="play"></i><h2>Continue Watching</h2><span class="mono">Display</span></div>
    <div class="setline"><span>Items Shown In Continue Watching</span>
@@ -80,7 +80,7 @@ function renderSettings(){
   <div class="ssec"><div class="shead"><i data-lucide="camera"></i><h2>Screenshot</h2><span class="mono">Capture Settings</span></div>
    <div class="setline"><span>Resolution Scale</span>
     <span class="stepper"><button type="button" data-action="ss-scale" data-d="-1" title="Decrease"><i data-lucide="minus"></i></button><span class="mono stv" id="ss-scale-v">${(settings.screenshot&&settings.screenshot.scale)||2}x</span><button type="button" data-action="ss-scale" data-d="1" title="Increase"><i data-lucide="plus"></i></button></span></div>
-   <div class="setline"><span>Include OBSCURA Watermark</span><label class="switch"><input type="checkbox" id="ss-wm" ${(settings.screenshot&&settings.screenshot.watermark!==false)?'checked':''}><span class="knob"></span></label></div>
+   <div class="setline"><span>Include UMBRA Watermark</span><label class="switch"><input type="checkbox" id="ss-wm" ${(settings.screenshot&&settings.screenshot.watermark!==false)?'checked':''}><span class="knob"></span></label></div>
    <div class="setline"><span>Show Page Number On Multi-Page</span><label class="switch"><input type="checkbox" id="ss-pagelabel" ${(settings.screenshot&&settings.screenshot.pageLabel!==false)?'checked':''}><span class="knob"></span></label></div>
    <div class="setline"><span>Auto-Download After Capture</span><label class="switch"><input type="checkbox" id="ss-autodl" ${(settings.screenshot&&settings.screenshot.autoDownload)?'checked':''}><span class="knob"></span></label></div>
    <div style="margin-bottom:12px;max-width:520px;margin-top:10px"><label class="flab">Image Format</label>

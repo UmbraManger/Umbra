@@ -14,7 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRAPER = os.path.join(ROOT, "scrapers", "julesjordan.py")
 
 try:
-    _spec = importlib.util.spec_from_file_location("obscura_julesjordan", SCRAPER)
+    _spec = importlib.util.spec_from_file_location("umbra_julesjordan", SCRAPER)
     jj = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(jj)
     IMPORT_ERROR = None

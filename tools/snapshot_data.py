@@ -1,7 +1,7 @@
-"""Take a consistent, verified snapshot of Obscura's data folder.
+"""Take a consistent, verified snapshot of Umbra's data folder.
 
     python tools/snapshot_data.py                # -> backups/data-YYYYmmdd-HHMMSS/
-    python tools/snapshot_data.py --data D:\\Obscura\\data --out D:\\safe
+    python tools/snapshot_data.py --data D:\\Umbra\\data --out D:\\safe
     python tools/snapshot_data.py --verify backups/data-20260929-101500
 
 * obscura.db is copied with SQLite's online-backup API, so the copy is consistent

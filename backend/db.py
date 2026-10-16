@@ -23,7 +23,7 @@ SCHEMA_VERSION = 2
 def _writable(path: str) -> bool:
     try:
         os.makedirs(path, exist_ok=True)
-        probe = os.path.join(path, ".obscura-write-test")
+        probe = os.path.join(path, ".umbra-write-test")
         with open(probe, "w"): pass
         os.remove(probe)
         return True

@@ -12,9 +12,9 @@ class IconAssetTests(unittest.TestCase):
     def test_the_exe_icon_declared_by_the_spec_exists(self):
         """PyInstaller resolves the icon relative to backend/, and build.bat
         fails outright when the file is missing."""
-        with open(os.path.join(BACKEND, "Obscura.spec"), encoding="utf-8") as f:
+        with open(os.path.join(BACKEND, "Umbra.spec"), encoding="utf-8") as f:
             m = re.search(r"icon='([^']+)'", f.read())
-        self.assertIsNotNone(m, "Obscura.spec must declare an icon")
+        self.assertIsNotNone(m, "Umbra.spec must declare an icon")
         self.assertTrue(os.path.isfile(os.path.join(BACKEND, m.group(1))),
                         f"icon file missing: {m.group(1)}")
 

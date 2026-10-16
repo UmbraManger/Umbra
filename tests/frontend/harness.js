@@ -45,6 +45,19 @@ function createWindow(files = CHAIN, { fetch = deadFetch } = {}) {
   // the window's own timers instead — close() cancels those.
   w.requestAnimationFrame = cb => w.setTimeout(() => cb(Date.now()), 16);
   w.cancelAnimationFrame = id => w.clearTimeout(id);
+  // jsdom has no canvas backend, so getContext() returns null and the
+  // placeholder player dies the moment it draws. A permissive 2D stand-in keeps
+  // it mountable; these tests care about the controls, not the pixels.
+  w.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, {
+    get(t, k) {
+      if (k in t) return t[k];
+      if (typeof k !== 'string') return undefined;
+      // any method answers with an object that has .width/.data/.addColorStop
+      t[k] = () => ({ width: 0, data: new Uint8ClampedArray(4), addColorStop() {} });
+      return t[k];
+    },
+    set(t, k, v) { t[k] = v; return true; },
+  });
   for (const f of files) {
     errors.length = 0;
     evalFile(w, f);

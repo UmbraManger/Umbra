@@ -34,6 +34,20 @@ test('corrupt obscura:encimgs recovers to {} and keeps a raw copy', () => {
   assert.strictEqual(w.localStorage.getItem(corruptKey), '{not json');
   w.close();
 });
+test('clearImageCache prunes encStore entries no record references anymore', () => {
+  const w = createWindow([]);
+  // no backend, so clearImageCache skips the /api/images/prune fetch
+  w.eval('Sync=null');
+  evalFile(w, 'utils.js');
+  w.eval(`encStore.left={iv:'00',data:'00',t:'image/jpeg'};encStore.used={iv:'00',data:'00',t:'image/jpeg'};saveEncStore()`);
+  w.eval('DB=null');
+  w.eval('window.DB={movies:[{id:"m1",posterF:"enc://used"}],scenes:[],performers:[]}');
+  w.eval('clearImageCache(false)');
+  const store = JSON.parse(w.eval('JSON.stringify(encStore)'));
+  assert.ok(!('left' in store), 'unreferenced image must be pruned');
+  assert.ok('used' in store, 'referenced image must survive');
+  w.close();
+});
 test('scanProgressWatch drives the settings scan bar from the real count', async () => {
   const w = createWindow(undefined, {
     fetch: (url) => {

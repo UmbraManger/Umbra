@@ -1,4 +1,4 @@
-"""Obscura API — all routes under /api. Frontend is served at /."""
+"""Umbra API — all routes under /api. Frontend is served at /."""
 import os, sys, json, re, time, secrets, hmac, logging
 from typing import Optional
 from urllib.parse import urlparse
@@ -24,12 +24,12 @@ import media as media_engine
 
 db.connect()
 # (schema incl. positions + column migrations lives in db._migrate)
-log = logging.getLogger("obscura")
+log = logging.getLogger("umbra")
 
-app = FastAPI(title="Umbra", version="0.9")
+app = FastAPI(title="Umbra", version="1.0")
 
 # ---- security: per-run token + Host/Origin enforcement ----
-# Everything under /api/ requires the per-run token (header X-Obscura-Token or
+# Everything under /api/ requires the per-run token (header X-Umbra-Token or
 # ?t=). The only exception is a plain GET of /api/images/* and /api/media/*
 # (img/video tags cannot set headers) — those additionally require a
 # same-origin/no Sec-Fetch-Site. Host must be loopback and Origin, when sent,
@@ -39,7 +39,7 @@ app = FastAPI(title="Umbra", version="0.9")
 API_TOKEN = secrets.token_hex(32)
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _ASSET_PREFIXES = ("/api/images/", "/api/media/")
-_TOKEN_HDR = "x-obscura-token"
+_TOKEN_HDR = "x-umbra-token"
 
 
 class SecurityMiddleware(BaseHTTPMiddleware):
@@ -151,7 +151,7 @@ def _to_db(kind, data, create=False):
     return rec
 
 @app.get("/api/ping")
-def ping(): return {"ok": True, "app": "Umbra", "version": "0.9"}
+def ping(): return {"ok": True, "app": "Umbra", "version": "1.0"}
 
 @app.get("/api/library")
 def library():
@@ -161,6 +161,40 @@ def library():
         lib[kind] = [_from_db(kind, r) for r in rows]
     lib["settings"] = _public_settings()
     return lib
+
+IMG_URL_RE = re.compile(r"/api/images/(i[0-9a-f]{8})")
+# Columns whose value is an image reference (poster/logo/photo) plus the JSON
+# gallery list. Anything an update replaces with a new reference means the old
+# blob would never be reaped otherwise.
+_IMG_COLS = {"movies": ["poster_f", "poster_b"],
+             "scenes": ["cover_a", "cover_b", "thumb", "gallery"],
+             "performers": ["photo"],
+             "studios": ["logo"]}
+
+def _img_refs(img_id: str) -> int:
+    """How many current library references point at /api/images/<img_id>."""
+    like = f"%{img_id}%"
+    return sum(db.one(f"SELECT COUNT(*) AS n FROM {t} WHERE {c} LIKE ?", (like,))["n"]
+               for t, cols in _IMG_COLS.items() for c in cols)
+
+
+def _prune_record_images(kind: str, old_row: dict, keep=frozenset()) -> None:
+    """Post-DELETE/UPDATE sweep: delete blobs the library no longer references.
+    Called after the row change so reference counts reflect the new state; ids
+    in `keep` are still present in the updated row."""
+    for col in _IMG_COLS.get(kind, []):
+        for old_id in set(IMG_URL_RE.findall(str(old_row.get(col) or ""))):
+            if old_id not in keep and _img_refs(old_id) == 0:
+                crypto.remove_image(old_id)
+
+
+def _prune_replaced_images(kind: str, old_row: dict, rec: dict) -> None:
+    keep = set()
+    for col in _IMG_COLS.get(kind, []):
+        if col in rec:
+            keep |= set(IMG_URL_RE.findall(rec[col] if isinstance(rec[col], str) else ""))
+    _prune_record_images(kind, old_row, keep)
+
 
 def _save_one(kind: str, data: dict, create: bool) -> str:
     table = TABLES[kind]
@@ -190,7 +224,9 @@ def _save_one(kind: str, data: dict, create: bool) -> str:
     if not rec:
         return rid            # everything in the body was ignored — nothing to update
     sets = ",".join(f"{c}=?" for c in rec)
+    old_row = db.one(f"SELECT * FROM {table} WHERE id=?", (rid,)) or {}
     db.execute(f"UPDATE {table} SET {sets} WHERE id=?", list(rec.values()) + [rid])
+    _prune_replaced_images(kind, old_row, rec)
     return rid
 
 def _register_crud(kind):
@@ -215,18 +251,13 @@ def _register_crud(kind):
                 raise HTTPException(403, "no scan folders configured — refusing to delete the file from disk")
             if not media_engine.inside_roots(real, roots):
                 raise HTTPException(403, "file is outside the configured scan folders — refusing to delete it")
-        if kind in ("movies", "scenes"):
-            img_cols = {"movies": ["poster_f", "poster_b"],
-                        "scenes": ["cover_a", "cover_b"]}.get(kind, [])
-            row2 = db.one(f"SELECT {','.join(img_cols)} FROM {TABLES[kind]} WHERE id=?", (rid,))
-            if row2:
-                for c in img_cols:
-                    m = re.match(r"/api/images/(i[0-9a-f]{8})$", row2[c] or "")
-                    if m: crypto.remove_image(m.group(1))
+        old_row = db.one(f"SELECT * FROM {TABLES[kind]} WHERE id=?", (rid,))
         if kind == "movies":
             db.execute("UPDATE scenes SET movie_id=NULL WHERE movie_id=?", (rid,))
         db.execute("DELETE FROM positions WHERE media_id=?", (kind[:-1] + ":" + rid,))
         db.execute(f"DELETE FROM {TABLES[kind]} WHERE id=?", (rid,))
+        if old_row and kind in _IMG_COLS:
+            _prune_record_images(kind, old_row)
         file_removed = False
         if file and path and os.path.isfile(path):
             try:
@@ -236,23 +267,17 @@ def _register_crud(kind):
     def delete_all(body: dict = Body(default={})):
         if (body or {}).get("confirm") != "DELETE":
             raise HTTPException(400, 'confirmation required: send {"confirm":"DELETE"}')
-        # Mirror the single-row delete: drop this kind's poster/cover blobs and
+        # Mirror the single-row delete: drop this kind's image blobs and
         # watch positions, orphan the movie links scenes point at, then clear
         # the table. Cross-kind references are left stale on purpose (the UI
         # confirm says so).
-        if kind in ("movies", "scenes"):
-            cols = {"movies": ["poster_f", "poster_b"],
-                    "scenes": ["cover_a", "cover_b"]}[kind]
-            ids = set()
-            for row in db.query(f"SELECT {','.join(cols)} FROM {TABLES[kind]}"):
-                for c in cols:
-                    m = re.match(r"/api/images/(i[0-9a-f]{8})$", row[c] or "")
-                    if m: ids.add(m.group(1))
-            for i in ids: crypto.remove_image(i)
+        old_rows = db.query(f"SELECT * FROM {TABLES[kind]}") if kind in _IMG_COLS else []
         if kind == "movies":
             db.execute("UPDATE scenes SET movie_id=NULL WHERE movie_id IS NOT NULL")
         db.execute("DELETE FROM positions WHERE media_id LIKE ?", (kind[:-1] + ":%",))
         db.execute(f"DELETE FROM {TABLES[kind]}")
+        for row in old_rows:
+            _prune_record_images(kind, row)
         return {"ok": True}
     app.post(f"/api/{kind}")(create)
     app.put(f"/api/{kind}")(update)
@@ -422,6 +447,21 @@ def img_encrypt_all():
         raise HTTPException(400, str(e))
     return {"encrypted": n}
 
+@app.post("/api/images/prune")
+def images_prune():
+    """Delete stored blobs that no library record references (replaced covers,
+    failed imports). Explicit user action from Clear Image Cache; scans blob
+    files in data/encrypted and drops the ones with zero references."""
+    n = 0
+    if os.path.isdir(crypto.ENC_DIR):
+        for fn in sorted(os.listdir(crypto.ENC_DIR)):
+            m = re.fullmatch(r"(i[0-9a-f]{8})\.bin", fn)
+            if not m or _img_refs(m.group(1)):
+                continue
+            crypto.remove_image(m.group(1))
+            n += 1
+    return {"pruned": n}
+
 @app.get("/api/images/{img_id}")
 def image_get(img_id: str):
     if not re.fullmatch(r"i[0-9a-f]{8}", img_id or ""):
@@ -437,7 +477,7 @@ def image_get(img_id: str):
 # ---- wikipedia lookup (fill descriptions) ----
 @app.get("/api/wikipedia")
 def wikipedia(q: str):
-    hdr = {"User-Agent": "Obscura/0.9 (self-hosted media library)"}
+    hdr = {"User-Agent": "Umbra/1.0 (self-hosted media library)"}
 
     def api(params):
         return requests.get("https://en.wikipedia.org/w/api.php", params=params,
@@ -504,8 +544,8 @@ def dialog_file():
 
 # ---- scanner ----
 @app.post("/api/scan")
-def scan(body: dict = Body(...)):
-    files = scanner.walk(body.get("dirs", []))
+async def scan(body: dict = Body(...)):
+    files = await run_in_threadpool(scanner.walk, body.get("dirs", []))
     return {"found": files, "count": len(files)}
 
 # Progress for the candidates scan below: it ffprobes every file synchronously
@@ -518,9 +558,8 @@ _SCAN = {"active": False, "done": 0, "total": 0}
 def scan_progress() -> dict:
     return dict(_SCAN)
 
-@app.post("/api/scan/candidates")
-def scan_candidates(body: dict = Body(...)):
-    files = scanner.walk(body.get("dirs", []))
+def _scan_candidates(dirs: list) -> list:
+    files = scanner.walk(dirs)
     _SCAN.update(active=True, done=0, total=len(files))
     try:
         for i, f in enumerate(files, 1):
@@ -534,6 +573,14 @@ def scan_candidates(body: dict = Body(...)):
     finally:
         _SCAN["active"] = False
     files.sort(key=lambda x: (x["imported"], x["dir"], x["name"]))
+    return files
+
+# Heavy scan work stays off the event loop (same pattern as backup/restore):
+# ffprobe per candidate and poster imports would otherwise stall every other
+# request — including /api/scan/progress the UI is polling — for the whole run.
+@app.post("/api/scan/candidates")
+async def scan_candidates(body: dict = Body(...)):
+    files = await run_in_threadpool(_scan_candidates, body.get("dirs", []))
     return {"candidates": files, "count": len(files)}
 
 class ImportBody(BaseModel):
@@ -552,10 +599,10 @@ class ImportBody(BaseModel):
     fav: bool = False
 
 @app.post("/api/scan/import")
-def scan_import(b: ImportBody):
+async def scan_import(b: ImportBody):
     try:
-        rec = scanner.import_file(
-            b.path, b.kind, b.title, year=b.year, date=b.date,
+        rec = await run_in_threadpool(
+            scanner.import_file, b.path, b.kind, b.title, year=b.year, date=b.date,
             studio_id=b.studio_id, movie_id=b.movie_id,
             duration_min=b.duration_min, director=b.director, desc=b.desc,
             actor_ids=b.actor_ids, category_ids=b.category_ids, fav=b.fav)
@@ -830,7 +877,9 @@ def media_sub(kind: str, rid: str, idx: int):
 @app.post("/api/media/{kind}/{rid}/open")
 def media_open(kind: str, rid: str):
     path = media_engine.get_path(kind, rid)
-    if not path: raise HTTPException(404)
+    # same detail as the stream route: a bare 404 leaves the player with no
+    # idea whether the file is missing, moved, or outside the scan folders.
+    if not path: raise HTTPException(404, "no video file linked to this record")
     if not media_engine.open_with_os(path): raise HTTPException(500, "could not open with OS player")
     return {"ok": True}
 

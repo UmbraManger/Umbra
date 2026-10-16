@@ -1,4 +1,4 @@
-"""AdultEmpire scraper — Obscura-compatible.
+"""AdultEmpire scraper — Umbra-compatible.
 
 Supports: scene/movie by-url, scene/movie by-name
 Sites: adultempire.com, adultdvdempire.com
@@ -380,7 +380,7 @@ def _search(query):
 
 
 def _finalize(result):
-    """Normalize keys for Obscura and make sure covers are present."""
+    """Normalize keys for Umbra and make sure covers are present."""
     if not result:
         return {}
     if result.get("studio") and not result.get("studioName"):
@@ -394,7 +394,7 @@ def _finalize(result):
 
 
 def scrape(title="", url="", html="", **kwargs):
-    """Obscura scraper entry point."""
+    """Umbra scraper entry point."""
     if url:
         result = _scrape_page(url)
         if result:

@@ -109,7 +109,7 @@ def get_best_image(images_dict):
 
 
 def release_to_scene(release, default_studio="Unknown"):
-    """Convert a P1 API release object to Obscura scene dict."""
+    """Convert a P1 API release object to Umbra scene dict."""
     scene = {'kind': 'scene'}
 
     scene['title'] = (release.get('title') or '').strip()

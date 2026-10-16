@@ -7,7 +7,7 @@ files the app actually ships:
 
     frontend/img/umbra.png     sidebar brand + About + drawn title bar
     frontend/img/favicon.png   browser tab icon
-    backend/umbra.ico          the exe/taskbar icon (referenced by Obscura.spec)
+    backend/umbra.ico          the exe/taskbar icon (referenced by Umbra.spec)
 """
 import os
 import sys

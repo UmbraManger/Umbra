@@ -46,3 +46,20 @@ test('Clear Image Cache button fires its handler', () => {
     .some(t => t.textContent.includes('Image Cache Cleared')));
   w.close();
 });
+
+test('clicking the PLAYER radio text (not just the dot) saves the choice', () => {
+  /** Regression: data-action lived on the <input> while the clickable text was
+      the wrapping <label> — clicking "OS Default Player" never fired the
+      handler, so the app stayed on the internal player. label for=/input id=
+      makes the browser retarget the label click to the input. */
+  const w = bootWithRouter().w;
+  w.eval('renderSettings()');
+  const ext = w.document.getElementById('pl-ext');
+  assert.ok(ext, 'the external radio has an id');
+  // click the LABEL like a real user (the visible text), not the radio dot
+  ext.closest('label').click();
+  assert.strictEqual(w.eval('settings.player'), 'external',
+    'the external choice must be saved');
+  assert.ok(w.document.getElementById('pl-ext').checked, 'the radio state follows');
+  w.close();
+});

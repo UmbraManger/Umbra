@@ -47,6 +47,50 @@ test('Import All reports only once every file is imported', async () => {
   w.close();
 });
 
+test('Import All pauses every still-pending card Import button while it runs', async () => {
+  // The second import stalls: during that stall cards 2+3 must not be startable
+  // (a manual Import mid-queue would create a duplicate record).
+  let n = 0, release;
+  const gate = new Promise(res => { release = res; });
+  const w0 = createWindow(undefined, {
+    fetch: (url, init) => {
+      const u = String(url);
+      if (u.includes('/api/ping')) return Promise.resolve({ ok: true, json: async () => ({ ok: true }) });
+      if (u.includes('/api/scan/import')) {
+        n++;
+        if (n === 1) return gate.then(() => ({ ok: true, json: async () => ({ record: {
+          id: 'mv-g', title: 'G', fav: 0, studio_id: '', duration_min: 0, director: '',
+          desc: '', file_path: JSON.parse(init.body).path, created_at: '',
+          actor_ids: [], category_ids: [], year: null, scenes: 0,
+          poster_f: '', poster_b: '',
+        } }) }));
+        return Promise.resolve({ ok: true, json: async () => ({ record: {
+          id: 'mv-' + n, title: 'F' + n, fav: 0, studio_id: '', duration_min: 0,
+          director: '', desc: '', file_path: JSON.parse(init.body).path,
+          created_at: '', actor_ids: [], category_ids: [], year: null, scenes: 0,
+          poster_f: '', poster_b: '',
+        } }) });
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) });
+    },
+  });
+  const w = w0;
+  await new Promise(r => setTimeout(r, 60));
+  w.eval('openImportModal(' + JSON.stringify(cands(3, false)) + ')');
+  w.document.querySelector('[data-action="imp-all"]').click();
+  await new Promise(r => setTimeout(r, 60));
+  assert.strictEqual(n, 1, 'the first import is still in flight');
+  const pending = [...w.document.querySelectorAll('.impcard:not(.imp-done)')];
+  assert.ok(pending.length === 3, 'cards still pending');
+  assert.ok(pending.every(c => !c.querySelector('[data-action="imp-do"]') ||
+    c.querySelector('[data-action="imp-do"]').disabled),
+    'pending Import buttons are disabled mid-queue');
+  release();
+  await new Promise(r => setTimeout(r, 150));
+  assert.strictEqual(n, 3, 'the queue resumes and completes');
+  w.close();
+});
+
 test('Mark Unimported on a freshly imported card restores it in place', async () => {
   const { w } = boot();
   await new Promise(r => setTimeout(r, 60));

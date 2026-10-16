@@ -1,4 +1,4 @@
-"""Obscura entry point — starts the API server, then opens a native window.
+"""Umbra entry point — starts the API server, then opens a native window.
 
 The HTTP server is the transport pywebview renders (http://127.0.0.1:<port>); it
 is not a "browser mode". To debug the UI in your own browser instead, run:
@@ -113,7 +113,7 @@ def main():
     for _ in range(100):
         try:
             req = urllib.request.Request(url + "/api/ping",
-                                        headers={"X-Obscura-Token": API_TOKEN})
+                                        headers={"X-Umbra-Token": API_TOKEN})
             urllib.request.urlopen(req, timeout=0.3); break
         except Exception:
             time.sleep(0.1)

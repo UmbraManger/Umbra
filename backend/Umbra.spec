@@ -43,7 +43,7 @@ a = Analysis(
     ],
     noarchive=False)
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='Obscura',
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='Umbra',
          icon='umbra.ico',   # baked by tools/make_icon.py from the source art
-         console=bool(int(os.environ.get('OBSCURA_CONSOLE', '0'))))
-coll = COLLECT(exe, a.binaries, a.datas, name='Obscura')
+         console=bool(int(os.environ.get('UMBRA_CONSOLE', '0'))))
+coll = COLLECT(exe, a.binaries, a.datas, name='Umbra')

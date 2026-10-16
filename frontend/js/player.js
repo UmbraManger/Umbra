@@ -415,14 +415,7 @@ function mountRealPlayer(host,item,kind,coverItem,pos){
    }
    icons();
   }
-  const openExternal=()=>{
-   fetch(`/api/media/${kind}/${item.id}/open`,{method:'POST'})
-    .then(r=>{
-     if(r.ok)return toast('Opened In OS Default Player','external-link');
-     return r.json().catch(()=>({})).then(j=>toast(j.detail||'Could Not Open Externally','alert-triangle'));
-    })
-    .catch(()=>toast('Could Not Open Externally','alert-triangle'));
-  };
+  const openExternal=()=>openWithOS(kind,item.id);
   big.addEventListener('click',e=>{
    e.stopPropagation();
    if(settings.player==='external'){openExternal();return}
@@ -531,6 +524,15 @@ function mountRealPlayer(host,item,kind,coverItem,pos){
   });
  }).catch(()=>{});
 }
+// Hand the file to the system player. Shared by the real and the placeholder
+// player so the OS-Default-Player setting behaves the same wherever you press
+// play — before this, the placeholder player ignored it and just animated.
+function openWithOS(kind,id){
+ fetch(`/api/media/${kind}/${id}/open`,{method:'POST'})
+  .then(r=>{if(r.ok)return toast('Opened In OS Default Player','external-link');
+   return r.json().catch(()=>({})).then(j=>toast(j.detail||'Could Not Open Externally','alert-triangle'))})
+  .catch(()=>toast('Could Not Open Externally','alert-triangle'));
+}
 function mountPlayer(host,item,kind,coverItem,pos){
  playerTeardown();
  const realVid=$('video',host);
@@ -597,9 +599,9 @@ function mountPlayer(host,item,kind,coverItem,pos){
   else if(k==='quality'){quality=v;toast('Quality: '+v,'monitor')}
   renderMenu();
  });
- big.addEventListener('click',e=>{e.stopPropagation();setPlaying(!playing)});
- stage.addEventListener('click',e=>{if(!e.target.closest('.p-big'))setPlaying(!playing)});
- btnPlay.addEventListener('click',()=>setPlaying(!playing));
+ big.addEventListener('click',e=>{e.stopPropagation();if(settings.player==='external'){openWithOS(kind,item.id);return}setPlaying(!playing)});
+ stage.addEventListener('click',e=>{if(!e.target.closest('.p-big')){if(settings.player==='external'){openWithOS(kind,item.id);return}setPlaying(!playing)}});
+ btnPlay.addEventListener('click',()=>{if(settings.player==='external'){openWithOS(kind,item.id);return}setPlaying(!playing)});
  $('[data-p=skip-back]',host).addEventListener('click',()=>{setT(Math.max(0,t-10))});
  $('[data-p=skip-fwd]',host).addEventListener('click',()=>{setT(Math.min(dur,t+10))});
  seek.max=dur;seek.step='1';seek.addEventListener('input',()=>setT(+seek.value));

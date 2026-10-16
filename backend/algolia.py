@@ -18,20 +18,24 @@ def get_algolia_creds(site_url):
     """Get Algolia API credentials from a site's video listing page."""
     if site_url in _creds_cache:
         return _creds_cache[site_url]
-    try:
-        r = requests.get(f'{site_url}/en/videos', timeout=(5, 15), headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        })
-        r.raise_for_status()
-        app_id = re.search(r'"applicationID"\s*:\s*"([A-Z0-9]+)"', r.text)
-        api_key = re.search(r'"apiKey"\s*:\s*"([A-Za-z0-9+/=]+)"', r.text)
-        if app_id and api_key:
-            creds = {'appId': app_id.group(1), 'apiKey': api_key.group(1)}
-            _creds_cache[site_url] = creds
-            return creds
-    except Exception:
-        pass
-    _creds_cache[site_url] = None
+    # Two attempts with a generous timeout: the listing page is slow (measured
+    # up to ~14s), so one tight-timeout attempt used to fail routinely. Failures
+    # are never cached — a transient timeout must not poison every later lookup
+    # for the whole server session.
+    for _ in range(2):
+        try:
+            r = requests.get(f'{site_url}/en/videos', timeout=(10, 20), headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            })
+            r.raise_for_status()
+            app_id = re.search(r'"applicationID"\s*:\s*"([A-Z0-9]+)"', r.text)
+            api_key = re.search(r'"apiKey"\s*:\s*"([A-Za-z0-9+/=]+)"', r.text)
+            if app_id and api_key:
+                creds = {'appId': app_id.group(1), 'apiKey': api_key.group(1)}
+                _creds_cache[site_url] = creds
+                return creds
+        except Exception:
+            pass
     return None
 
 
@@ -182,7 +186,7 @@ def performer_from_hit(hit):
 
 
 def scene_from_hit(hit):
-    """Convert Algolia scene hit to Obscura scene dict."""
+    """Convert Algolia scene hit to Umbra scene dict."""
     scene = {'kind': 'scene'}
 
     if hit.get('title'):

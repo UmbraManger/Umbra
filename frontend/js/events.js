@@ -962,8 +962,17 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   const cards=$$('.impcard:not(.imp-done)');
   if(!cards.length){toast('Nothing To Import','check');return}
   a.disabled=true;
+  // Queue may take a while per file — pending cards' own Import buttons must not
+  // race it (the catch below re-arms a failed card's button).
+  $$('.impcard:not(.imp-done) [data-action=imp-do]',$('#m-body')).forEach(b=>b.disabled=true);
   let done=0,failed=0;
   const total=cards.length;
+  // A queue this long is slow (each import also stores sibling posters), so the
+  // modal footer shows real progress instead of leaving one dead button.
+  const prog=$('#impprog'),pFill=$('#ip-fill'),pTxt=$('#ip-txt');
+  if(prog){prog.style.display='';pFill.style.width='0%';pTxt.textContent='0 / '+total}
+  const tick=n=>{if(pFill)pFill.style.width=Math.round(n/total*100)+'%';
+   if(pTxt)pTxt.textContent='Adding '+n+' / '+total+' File'+(total===1?'':'s')};
   const importOne=(card)=>{
    if(!card)return Promise.resolve();
    const body={
@@ -999,14 +1008,16 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
      card.classList.add('imp-done');
      card.innerHTML=`<div class="imp-done-row"><i data-lucide="badge-check"></i><span>Imported As <b>${esc(local.title)}</b></span><button class="btn sm" data-action="open" data-kind="${body.kind}" data-id="${local.id}">Open</button><button class="btn sm ghost" data-action="imp-undone" data-path="${esc(body.path)}">Mark Unimported</button></div>`;
      done++;
+     tick(done);
     })
-    .catch(()=>{failed++;card.querySelector('.imp-do')?.removeAttribute('disabled')})
+    .catch(()=>{failed++;tick(done+failed);card.querySelector('[data-action=imp-do]')?.removeAttribute('disabled')})
     // then(), not finally(): this promise must resolve only once the WHOLE queue
     // is done — otherwise the completion toast fires after the first import with
     // a wrong count, and the dialog gets closed while files are still pending.
     .then(()=>importOne(cards.shift()));
   };
   importOne(cards.shift()).then(()=>{
+   if(prog)prog.style.display='none';
    a.disabled=false;icons();renderSidebar();
    toast(`Import Complete - ${done} Imported${failed?', '+failed+' Failed':''}`,done?'check':'alert-triangle');
   });

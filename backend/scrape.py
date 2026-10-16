@@ -1,4 +1,4 @@
-"""FaKNetwork standalone scraper — Obscura-compatible.
+"""FaKNetwork standalone scraper — Umbra-compatible.
 
 Supports: scene-by-url, scene-by-name
 API: https://api.faknetworks.com/v1/
@@ -12,7 +12,7 @@ from urllib.parse import quote
 import requests
 
 _scraper = requests.Session()
-_scraper.headers.update({"User-Agent": "Mozilla/5.0 (Obscura)"})
+_scraper.headers.update({"User-Agent": "Mozilla/5.0 (Umbra)"})
 
 TAG_CACHE: dict = {}
 
@@ -126,7 +126,7 @@ def _scene_search(query, site="fakings", lang="en"):
 
 
 def scrape(title="", url="", html="", domain="", **kwargs):
-    """Obscura scraper entry point."""
+    """Umbra scraper entry point."""
     if url:
         result = _scene_by_url(url)
         if result:

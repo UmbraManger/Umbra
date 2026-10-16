@@ -22,7 +22,7 @@ function renderSidebar(){
   <div class="sfoot">
    <button class="btn icon ghost" data-action="theme-quick" title="Toggle Theme"><i data-lucide="${settings.theme==='dark'?'sun':'moon'}"></i></button>
    <button class="btn icon ghost" data-action="lock-now" title="Lock Now" ${settings.lock.on?'':'style="display:none"'}><i data-lucide="lock"></i></button>
-   <span class="mono">v0.9 · ${Sync.on?'Synced':'Local'}</span>
+   <span class="mono">v${APP_VERSION} · ${Sync.on?'Synced':'Local'}</span>
   </div>`;
 }
 function render(){

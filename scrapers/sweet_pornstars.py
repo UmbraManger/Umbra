@@ -1,5 +1,5 @@
 """
-Sweet-Pornstars.com Scraper for Obscura
+Sweet-Pornstars.com Scraper for Umbra
 ========================================
 Searches performers and scenes via the sweet-pornstars.com JSON API.
 
@@ -85,7 +85,7 @@ def _strip_html(text):
 # ── Performer Lookup ──────────────────────────────────────────────────────────
 
 def lookup_performer(name, **kwargs):
-    """Search for a performer and return detailed info in Obscura format."""
+    """Search for a performer and return detailed info in Umbra format."""
     results = _search_models(name)
     if not results:
         return None
@@ -109,7 +109,7 @@ def lookup_performer(name, **kwargs):
     if not detail or "detail" in detail:
         return None
 
-    # Map to Obscura performer fields
+    # Map to Umbra performer fields
     country = detail.get("country") or {}
     ethnicity = detail.get("ethnicity") or {}
 
@@ -200,7 +200,7 @@ def search_scenes(query, max_pages=2, **kwargs):
 
 
 def _parse_scene(sc):
-    """Parse a scene API response into Obscura format."""
+    """Parse a scene API response into Umbra format."""
     title = sc.get("pagetitle", "")
     if not title:
         return None
@@ -281,7 +281,7 @@ def _abs_url(url):
 # ── Combined Search ───────────────────────────────────────────────────────────
 
 def search(query, kind="performer", **kwargs):
-    """Main search function. Returns data in Obscura scraper format."""
+    """Main search function. Returns data in Umbra scraper format."""
     gallery_count = int(
         kwargs.get("gallery_count")
         or kwargs.get("gallery count")

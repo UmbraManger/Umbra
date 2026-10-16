@@ -102,13 +102,13 @@ function openShareDialog(){
      if(ctx){
       const pad=48;
       ctx.save();
-      // OBSCURA watermark
+      // UMBRA watermark
       if(ss.watermark!==false){
        ctx.font='bold 44px "JetBrains Mono",monospace';
        ctx.textBaseline='bottom';
        ctx.shadowColor='rgba(0,0,0,0.65)';ctx.shadowBlur=8;
        ctx.fillStyle='rgba(255,255,255,0.9)';
-       ctx.fillText('OBSCURA',pad,canvas.height-pad*0.6);
+       ctx.fillText('UMBRA',pad,canvas.height-pad*0.6);
       }
       // Page indicator label when multiple pages
       if(totalPages>1&&ss.pageLabel!==false){
@@ -306,5 +306,5 @@ function openImportModal(candidates){
   ${pending.map(importCardHTML).join('')||`<div class="empty" style="padding:34px 16px"><i data-lucide="inbox"></i><span>No New Files To Import.</span></div>`}
   ${done.length?`<div class="divider" style="display:flex;align-items:center;gap:12px;margin:20px 0 12px;color:var(--faint)"><span class="mono" style="font-size:9px;letter-spacing:.14em">Already Imported</span></div>
    <div class="cplist" style="max-height:180px">${done.map(c=>`<div class="srcrow"><i data-lucide="badge-check"></i><span>${esc(c.name)}</span><button class="tx" data-action="imp-undone" data-path="${esc(c.path)}" data-cand="${esc(JSON.stringify(c))}" title="Mark Unimported"><i data-lucide="rotate-ccw"></i></button></div>`).join('')}</div>`:''}`,
-  footer:()=>`<span class="push"></span><button class="btn" data-action="imp-all"><i data-lucide="download"></i>Import All</button><button class="btn" data-mclose="1">Close</button>`}],0,760);
+  footer:()=>`<div class="scanprog" id="impprog" style="display:none;flex:1;margin:0 16px 0 0"><div class="sp-bar"><span id="ip-fill" style="width:0"></span></div><div class="mono" id="ip-txt"></div></div><button class="btn" data-action="imp-all"><i data-lucide="download"></i>Import All</button><button class="btn" data-mclose="1">Close</button>`}],0,760);
 }
