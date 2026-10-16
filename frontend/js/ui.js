@@ -52,6 +52,11 @@ function renderAbout(){
      </div>
      <p class="note" style="margin-top:16px">Umbra keeps everything in the local data folder and browser storage. Export regularly to keep backups - or use a full Settings › Storage backup whenever the backend is connected. Nothing ever leaves this machine unless you set up sync.</p>
     </div>
+    <div class="ssec"><div class="shead"><i data-lucide="heart-handshake"></i><h2>Support</h2></div>
+     <p class="note" style="margin-top:0">Umbra is free and open source. If it saves you time, donations are welcome:</p>
+     <div class="setline"><span>TON / GRAM</span><span class="mono" style="color:var(--text);flex:1;word-break:break-all">UQC3UZWZnH859-gvJ0a0U_h3C_1m-gDvFYTLeKIHxNdSluPs</span><button class="btn sm" data-copy-addr="UQC3UZWZnH859-gvJ0a0U_h3C_1m-gDvFYTLeKIHxNdSluPs"><i data-lucide="copy"></i></button></div>
+     <div class="setline" style="margin-top:8px"><span>Tron / TRX</span><span class="mono" style="color:var(--text);flex:1;word-break:break-all">TSPYepCjZ3egvXSPMxkiDTcr2PNtjV7ohh</span><button class="btn sm" data-copy-addr="TSPYepCjZ3egvXSPMxkiDTcr2PNtjV7ohh"><i data-lucide="copy"></i></button></div>
+    </div>
    </div>
   </div>`;
  icons();
@@ -59,6 +64,9 @@ function renderAbout(){
   const data={movies:DB.movies,scenes:DB.scenes,performers:DB.performers,studios:DB.studios,categories:DB.categories,settings};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='umbra-library.json';a.click();URL.revokeObjectURL(a.href);toast('Library Exported','download');
+ }));
+ $$('[data-copy-addr]').forEach(b=>b.addEventListener('click',()=>{
+  navigator.clipboard.writeText(b.dataset.copyAddr).then(()=>toast('Address Copied To Clipboard','copy')).catch(()=>toast('Copy Failed','alert-triangle'));
  }));
  $$('[data-action=clear-data]').forEach(b=>b.addEventListener('click',()=>{
   if(!confirm('Clear All Data? This Cannot Be Undone.'))return;

@@ -110,6 +110,15 @@ Both suites are green on `master`.
 
 ---
 
+## Donate
+
+Umbra is free and open source. If it saves you time, donations are welcome:
+
+- **TON / GRAM**: `UQC3UZWZnH859-gvJ0a0U_h3C_1m-gDvFYTLeKIHxNdSluPs`
+- **Tron / TRX**: `TSPYepCjZ3egvXSPMxkiDTcr2PNtjV7ohh`
+
+---
+
 ## Disclaimer
 
 Umbra is intended **for adults (18+)** and for organizing media you have the legal right to possess. Scrapers target third-party sites; you are responsible for complying with those sites' terms and the laws of your jurisdiction. The software comes without any warranty; see the license.

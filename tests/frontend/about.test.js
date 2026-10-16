@@ -14,11 +14,12 @@ test('About renders inside the page wrapper with one balanced stat grid', () => 
   // Stats grid (section 1): Version/Total/Favorites/Storage/Playlists/Resume
   // Points + 5 counts. Feature grid (section 2): 6 blurbs.
   const secs = page.querySelectorAll('#cat-about .ssec');
-  assert.strictEqual(secs.length, 4, 'About / Inside / System / Data sections');
+  assert.strictEqual(secs.length, 5, 'About / Inside / System / Data / Support sections');
   assert.strictEqual(secs[0].querySelectorAll('.cnt').length, 11);
   assert.strictEqual(secs[1].querySelectorAll('.cnt').length, 6,
     'the What\'s Inside grid carries 6 feature tiles');
   assert.ok(/Interface Engine/.test(page.textContent), 'the System section lists the engine');
+  assert.ok(page.querySelector('[data-copy-addr]'), 'the Support section lists donation addresses');
   assert.strictEqual(w.document.querySelectorAll('#main .frow').length, 0,
     'the 2-column .frow must not fight the 3-column .counts grid');
   w.close();
