@@ -28,6 +28,15 @@ test('buildScraperYAML with nothing mapped still yields parseable yaml', () => {
   assert.ok(out.includes('edit before running'), out);
 });
 
+test('buildScraperYAML only emits search template when it carries {title}', () => {
+  const w = createWindow();
+  const good = w.eval('buildScraperYAML("", ["scene"], [], "https://s.test/search?q={title}")');
+  assert.ok(good.includes('search:'), good);
+  assert.ok(good.includes('url: "https://s.test/search?q={title}"'), good);
+  const bad = w.eval('buildScraperYAML("", ["scene"], [], "https://s.test/search?q=")');
+  assert.ok(!bad.includes('search:'), bad);
+});
+
 test('prefillStructureRows seeds selectors from og: meta and h1', () => {
   const w = createWindow();
   const det = { title: 'Angela White', h1: 'Angela White', poster: 'http://p/1.jpg', desc: 'Bio' };

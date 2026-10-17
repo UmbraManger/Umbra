@@ -101,6 +101,7 @@ document.addEventListener('click',e=>{
    <div class="cmsg" style="margin-bottom:12px">Paste The Page's HTML Below (View Source → Copy), Load A Saved <b>.html</b> File, Or Just Give Its URL. The App Reads The Structure And Builds An Editable Field Mapping That Becomes A Working YAML Scraper.</div>
    <div class="frow" style="max-width:none">
     <div><label class="flab">Page URL (Optional)</label><input class="field" id="hs-url" placeholder="https://site.com/title"></div>
+    <div><label class="flab">Search URL Pattern (Optional)</label><input class="field" id="hs-search" placeholder="https://site.com/search?q={title}"><div class="dim" style="font-size:11px;margin-top:2px">Needed for title lookups — must contain <span class="mono">{title}</span>. Without it the scraper only works via "Fetch By URL".</div></div>
    </div>
    <div style="margin-top:8px"><label class="flab">Build Fields For</label><div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">${KIND_LIST.map(k=>`<label class="ckrow"><input type="checkbox" id="hs-k-${k}" ${k==='scene'?'checked':''}>${kindLabel(k)}</label>`).join('')}</div></div>
    <div style="margin-top:10px"><label class="flab">Page HTML</label>
@@ -116,6 +117,8 @@ document.addEventListener('click',e=>{
      const html=$('#hs-html',bx).value;
      if(html.trim().length<30){toast('Paste The Page HTML (At Least A Few Tags)','alert-triangle');return}
      const url=$('#hs-url',bx).value.trim();
+     const searchUrl=$('#hs-search',bx).value.trim();
+     if(searchUrl&&!searchUrl.includes('{title}')){toast('The Search URL Pattern Needs A {title} Placeholder','alert-triangle');return}
      const kinds=KIND_LIST.filter(k=>$('#hs-k-'+k,bx).checked);
      if(!kinds.length){toast('Build Fields For At Least One Content Type','alert-triangle');return}
      const det=detectStructure(html);
@@ -141,7 +144,7 @@ document.addEventListener('click',e=>{
         if(!Sync.on){toast('Connect The App Backend To Install External Scrapers','alert-triangle');return}
         const btn=$('#hs-save',f2||b2);btn.disabled=true;
         const name=(url?parseSourceName(url):'html-mapping')+'-scraper.yaml';
-        const yamlText=buildScraperYAML(url,kinds,rows);
+        const yamlText=buildScraperYAML(url,kinds,rows,searchUrl);
         try{
          const fd=new FormData();fd.append('file',new Blob([yamlText],{type:'text/yaml'}),name);
          const sp=new URLSearchParams();kinds.forEach(k=>sp.append('kind',k));

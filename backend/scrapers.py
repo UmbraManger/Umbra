@@ -200,7 +200,9 @@ def run_yaml(path: str, title: str = "", url: str = "") -> dict:
     if not target:
         tpl = (cfg.get("search") or {}).get("url", "")
         if tpl and title: target = tpl.replace("{title}", quote(title))
-    if not target: raise ValueError("no url and no search template in yaml")
+    if not target: raise ValueError(
+        "no url in the request and no search template in the yaml — "
+        'add "search: {url: ...{title}}" to the scraper or fetch by page URL')
     if not net_guard.safe_image_url(target):
         raise ValueError("blocked unsafe scraper target URL (private/loopback address)")
     # safe_get re-validates every redirect hop (P2: Gap 2, blind redirects).

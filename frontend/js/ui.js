@@ -307,9 +307,10 @@ const STRUCT_FIELDS={
  scene:[['title','Title','text'],['date','Date','text'],['cover_a','Cover','src'],['desc','Description','text'],['studio','Studio','text']],
  performer:[['name','Name','text'],['birth','Birth Date','text'],['nationality','Nationality','text'],['ethnicity','Ethnicity','text'],['measurements','Measurements','text'],['height','Height (cm)','int'],['weight','Weight (kg)','int'],['twitter','Twitter','text'],['instagram','Instagram','text'],['onlyfans','OnlyFans','text'],['photo','Photo','src']]
 };
-function buildScraperYAML(url,kinds,rows){
+function buildScraperYAML(url,kinds,rows,searchUrl){
  let y='# Scraper Built From HTML Structure Mapping\n# kinds: '+(kinds&&kinds.length?kinds.join(', '):'scene')+'\n';
  if(url)y+='# sample: '+url+'\n';
+ if(searchUrl&&searchUrl.includes('{title}'))y+='search:\n url: '+JSON.stringify(searchUrl)+'\n';
  y+='fields:\n';
  let n=0;
  for(const r of rows){
