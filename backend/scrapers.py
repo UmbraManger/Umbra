@@ -121,6 +121,31 @@ def set_structure(sid, structure: dict):
         if s["id"] == sid: s["structure"] = structure
     _save_meta(meta)
 
+# ---- kind auto-detection -------------------------------------------------
+# Bundled and uploaded python scrapers are classified by what they actually
+# implement, so the Settings list stops saying "movie" for every scraper.
+_KDEF = {"performer": re.compile(r"(?m)^\s*def\s+\w*(performer|pornstar|actor)\w*", re.I),
+         "scene": re.compile(r"(?m)^\s*def\s+\w*(scene|clip|gallery)\w*", re.I),
+         "movie": re.compile(r"(?m)^\s*def\s+\w*movie\w*", re.I)}
+# lookbehind instead of \b so tokens like search_scenes count ("_" isn't a letter)
+_KWORD = {"performer": re.compile(r"(?<![A-Za-z])(performer|pornstar|actor)", re.I),
+          "scene": re.compile(r"(?<![A-Za-z])(scene|clip|gallery)", re.I),
+          "movie": re.compile(r"(?<![A-Za-z])(movie|film)", re.I)}
+
+def detect_kind(src: str) -> str:
+    """Classify a python scraper's primary target. Def names are strongest
+    evidence (10x); whole-file marker words break mixed scrapers. The label is
+    display/default only — run_by_id always passes the caller's kind through."""
+    h = {k: len(r.findall(src)) for k, r in _KDEF.items()}
+    w = {k: len(_KWORD[k].findall(src)) for k in h}
+    if h["performer"] and not (w["scene"] or w["movie"]):
+        return "performer"
+    if h["movie"] and not h["scene"]:
+        return "movie"
+    total = {k: h[k] * 10 + w[k] for k in h}
+    best = max(total, key=lambda k: (total[k], k == "scene"))
+    return best if total[best] else "movie"
+
 def run_python(path: str, payload: dict) -> dict:
     # Execution gate: Python scrapers are arbitrary local code — off by default.
     if not db.get_settings().get("pyScrapers"):
@@ -208,16 +233,21 @@ def install_bundled() -> None:
         # a file whose id isn't a bundled one.
         sid = "bundled-" + fn[:-3]
         ours = next((s for s in meta if s.get("id") == sid), None)
+        kind = detect_kind(content.decode("utf-8", "replace"))
         if ours and ours.get("file") == fn:
             with open(dst, "wb") as f:
                 f.write(content)
+            # migrate kindless-era installs: re-classify and bump the meta entry
+            if ours.get("kind") != kind and ours.get("type") == "python":
+                ours["kind"] = kind
+                changed = True
             continue
         if fn in known or os.path.exists(dst):
             continue
         with open(dst, "wb") as f:
             f.write(content)
         meta.append({"id": sid, "name": fn[:-3], "file": fn, "type": "python",
-                     "kind": "movie", "enabled": False, "structure": None})
+                     "kind": kind, "enabled": False, "structure": None})
         known.add(fn)
         changed = True
     if changed:

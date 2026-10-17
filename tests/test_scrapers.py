@@ -95,6 +95,48 @@ class BundledRemovalTests(IsolatedCase):
                          "every tombstone lands, none is lost to a stale rewrite")
 
 
+class KindDetectionTests(IsolatedCase):
+    SRC_PERFORMER = "def performer_from_url(url):\n    ...\n\ndef performer_search(n):\n    ...\n\ndef scrape(name=\"\"):\n    ...\n"
+    SRC_MOVIE = "def _is_movie_url(href):\n    ...\n\ndef _get_movie_by_url(url):\n    ...\n\ndef scrape(**kw):\n    ...\n"
+    SRC_SCENE = "def search_scenes(q):\n    ...\n\ndef scrape_scene(url):\n    ...\n\ndef search_performers(q):\n    ...\n\ndef scrape_performer(url):\n    ...\n\ndef scrape(kind=\"\"):\n    ...\n"
+
+    def test_source_is_classified_by_what_it_implements(self):
+        self.assertEqual(scrapers.detect_kind(self.SRC_PERFORMER), "performer")
+        self.assertEqual(scrapers.detect_kind(self.SRC_MOVIE), "movie")
+        # scenes+performers together → the dominant-kind word wins
+        self.assertEqual(scrapers.detect_kind(self.SRC_SCENE), "scene")
+
+    def test_the_real_bundled_library_is_not_all_movies(self):
+        lib = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(scrapers.__file__))), "scrapers")
+        if not os.path.isdir(lib):
+            self.skipTest("bundled scraper sources not present in the dev tree")
+        kinds = {}
+        for fn in sorted(os.listdir(lib)):
+            if fn.endswith(".py"):
+                with open(os.path.join(lib, fn), encoding="utf-8", errors="replace") as f:
+                    kinds[fn] = scrapers.detect_kind(f.read())
+        these = set(kinds.values())
+        self.assertEqual(these, {"movie", "scene", "performer"},
+                         f"the library ships more than one group; got {kinds}")
+
+    def test_install_bundled_migrates_old_movie_labels(self):
+        """Entries installed before auto-detection (all 'movie') are re-classified
+        on the next boot from the refreshed file."""
+        import sys
+        bundle = os.path.join(db.SCRAPER_DIR, "scrapers")
+        os.makedirs(bundle, exist_ok=True)
+        with open(os.path.join(bundle, "perf.py"), "wb") as f:
+            f.write(self.SRC_PERFORMER.encode())
+        old = {"id": "bundled-perf", "name": "perf", "file": "perf.py",
+               "type": "python", "kind": "movie", "enabled": False, "structure": None}
+        scrapers._save_meta([old])
+        with mock.patch.object(sys, "frozen", True, create=True), \
+             mock.patch.object(sys, "_MEIPASS", db.SCRAPER_DIR, create=True):
+            scrapers.install_bundled()
+        [entry] = scrapers._meta()
+        self.assertEqual(entry["kind"], "performer")
+
+
 class PythonScraperTests(IsolatedCase):
     def test_python_scrapers_are_off_by_default(self):
         sid = scrapers.add("s.py", PY_SCRAPER, "movie")
