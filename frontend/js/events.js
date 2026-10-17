@@ -107,12 +107,12 @@ document.addEventListener('click',e=>{
     <button class="btn sm" id="hs-file-btn" style="margin-top:4px"><i data-lucide="file-up"></i>Load HTML File</button>
     <textarea class="field mono" id="hs-html" rows="8" placeholder="<html>...</html>" style="font-size:11px;margin-top:6px"></textarea></div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="hs-parse"><i data-lucide="scan-text"></i>Build Mapping</button>`,
-   mount(bx){
+   mount(bx,fx){
     const fin=document.createElement('input');fin.type='file';fin.accept='.html,.htm';fin.style.display='none';
     fin.addEventListener('change',()=>{const fh=fin.files[0];if(!fh)return;
      const rd=new FileReader();rd.onload=()=>{$('#hs-html',bx).value=rd.result;toast('HTML Loaded - '+fh.name,'file-up')};rd.readAsText(fh)});
     $('#hs-file-btn',bx).addEventListener('click',()=>fin.click());
-    $('#hs-parse',bx).addEventListener('click',()=>{
+    $('#hs-parse',fx||bx).addEventListener('click',()=>{
      const html=$('#hs-html',bx).value;
      if(html.trim().length<30){toast('Paste The Page HTML (At Least A Few Tags)','alert-triangle');return}
      const url=$('#hs-url',bx).value.trim();
@@ -130,8 +130,8 @@ document.addEventListener('click',e=>{
        ${r.hint?`<div class="dim" style="font-size:11px;margin-top:2px">sample: ${esc(String(r.hint).slice(0,90))}</div>`:''}</div>`}).join('')}
       <p class="note" style="margin-top:10px">Saved As A YAML Scraper Assigned To: <b>${kinds.map(kindLabel).join(' · ')}</b>. Open Settings › Scanning Any Time To Re-Build Or Tweak Selectors.</p>`,
       footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="hs-save"><i data-lucide="check"></i>Save As Scraper</button>`,
-      mount(b2){
-       $('#hs-save',b2).addEventListener('click',async()=>{
+      mount(b2,f2){
+       $('#hs-save',f2||b2).addEventListener('click',async()=>{
         rows.forEach((r,i)=>{
          ['sel','attr'].forEach(v=>{
           const el=b2.querySelector('[data-mr="'+i+'"][data-mf="'+v+'"]');
@@ -139,7 +139,7 @@ document.addEventListener('click',e=>{
          });
         });
         if(!Sync.on){toast('Connect The App Backend To Install External Scrapers','alert-triangle');return}
-        const btn=$('#hs-save',b2);btn.disabled=true;
+        const btn=$('#hs-save',f2||b2);btn.disabled=true;
         const name=(url?parseSourceName(url):'html-mapping')+'-scraper.yaml';
         const yamlText=buildScraperYAML(url,kinds,rows);
         try{
