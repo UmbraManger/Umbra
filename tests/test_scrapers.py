@@ -264,6 +264,35 @@ class YamlScraperTests(IsolatedCase):
                                "performers": ["Angela White", "Abella Danger"]})
 
 
+    def test_multi_select_and_jsonld_attr(self):
+        # multi: select-all → arrays (private.com-style cast/category lists);
+        # ld: — dotted path into an embedded JSON-LD VideoObject (RK-style pages)
+        y = ('search: {url: "https://s.test/?q={title}"}\nfields:\n'
+             ' performers: {selector: "li.tag-models a", attr: text, multi: true}\n'
+             ' catNames: {selector: "li.tag-tags a", attr: text, multi: true}\n'
+             ' title: {selector: "script[type=\\"application/ld+json\\"]", attr: ld:name}\n'
+             ' cover_a: {selector: "script[type=\\"application/ld+json\\"]",'
+             ' attr: "ld:thumbnailUrl.0"}\n')
+        html = ('<li class="tag-models"><a>Matty Mila Perez</a></li>'
+                '<li class="tag-models"><a>Papi Rodriguez</a></li>'
+                '<li class="tag-tags"><a>4K</a></li><li class="tag-tags"><a>Anal</a></li>'
+                '<script type="application/ld+json">{"@context":"https://schema.org",'
+                '"@type":"VideoObject","name":"Public Pickup",'
+                '"thumbnailUrl":["https://x.test/p.jpg","https://x.test/q.jpg"]}</script>')
+        p = self.tmpfile("multi.yml", y.encode())
+        class R:  # noqa: E701
+            text = html
+            status_code = 200
+            def raise_for_status(self): pass
+        with mock.patch.object(scrapers.requests, "get", return_value=R()), \
+                _stub_public_dns():
+            out = scrapers.run_yaml(p, title="t")
+        self.assertEqual(out, {"performers": ["Matty Mila Perez", "Papi Rodriguez"],
+                               "catNames": ["4K", "Anal"],
+                               "title": "Public Pickup",
+                               "cover_a": "https://x.test/p.jpg"})
+
+
 class SiteRoutingTests(IsolatedCase):
     def test_no_matching_scraper_is_a_clear_error(self):
         with self.assertRaisesRegex(ValueError, "no scraper installed"):

@@ -190,6 +190,31 @@ def run_python(path: str, payload: dict) -> dict:
 def _sel(soup, selector, attr):
     el = soup.select_one(selector) if selector else None
     if el is None: return None
+    if attr and attr.startswith("ld:"):
+        # dotted path into a JSON-LD block: ld:name, ld:thumbnailUrl.0 — pages
+        # that only expose schema.org VideoObject data are still scrapable
+        try:
+            import json as _json
+            v = _json.loads(el.get_text())
+        except Exception:
+            return None
+        if isinstance(v, list):
+            v = next((d for d in v if isinstance(d, dict)), None)
+        for part in attr[3:].split("."):
+            if isinstance(v, dict):
+                v = v.get(part)
+            elif isinstance(v, list):
+                if part.isdigit():                    # ld:thumbnailUrl.0 → index
+                    v = v[int(part)] if int(part) < len(v) else None
+                else:                                 # ld:actor → first object
+                    v = next((d for d in v if isinstance(d, dict)), None)
+            else:
+                break
+        if isinstance(v, (int, float)):
+            return str(v)
+        if isinstance(v, list):                       # e.g. thumbnailUrl: [str, ...]
+            return next((s for s in v if isinstance(s, str)), None)
+        return v if isinstance(v, str) and v.strip() else None
     if not attr or attr == "text": return el.get_text(" ", strip=True)
     return el.get(attr)
 
@@ -231,7 +256,17 @@ def run_yaml(path: str, title: str = "", url: str = "") -> dict:
     out = {}
     for key, rule in (cfg.get("fields") or {}).items():
         if not isinstance(rule, dict): continue
-        val = _sel(soup, rule.get("selector", ""), rule.get("attr", "text"))
+        attr = rule.get("attr", "text")
+        if rule.get("multi"):
+            # select_all — cast/category/cover listings collect into the array
+            # fields the fetch flow consumes (catNames/performers/covers)
+            vals = []
+            for el in soup.select(rule.get("selector") or ""):
+                v = el.get_text(" ", strip=True) if (not attr or attr == "text") else el.get(attr)
+                if v: vals.append(v.strip())
+            val = vals or None
+        else:
+            val = _sel(soup, rule.get("selector", ""), attr)
         if val in (None, ""): continue
         t = (rule.get("transform") or "").lower()
         if t == "int":
@@ -241,8 +276,8 @@ def run_yaml(path: str, title: str = "", url: str = "") -> dict:
         elif t == "lower": val = str(val).lower()
         elif t == "title": val = str(val).title()
         if val in (None, ""): continue
-        if key in _LIST_KEYS:            # the fetch flow consumes these as arrays
-            val = [x.strip() for x in str(val).split(",") if x.strip()]
+        if key in _LIST_KEYS and isinstance(val, str):   # comma list → array
+            val = [x.strip() for x in val.split(",") if x.strip()]
             if not val: continue
         out[key] = val
     return out

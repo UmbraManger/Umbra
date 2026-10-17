@@ -305,6 +305,10 @@ function detectStructure(html){
   if(/PT\d/.test(html))out.detected.push('ISO Duration');
   out.hasTag=/class=["'][^"']*(tag|category|genre)[^"']*["']/i.test(html);
   out.hasDuration=/PT\d/.test(html)||/<time[^>]+datetime=/.test(html)||/itemprop=["']duration/.test(html)||/og:duration/.test(html);
+  out.ld=grab(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]{10,4000}?)<\/script>/i);
+  out.ldIsVideo=/["']@type["']\s*:\s*["']Video|Movie|VideoObject/i.test(out.ld||'');
+  out.hasUpload=/itemprop=["']uploadDate|property=["']article:published/.test(html);
+  out.hasCast=/data-track="PORNSTAR_NAME"|class=["'][^"']*(cast|actor|performers?|models?)[^"']*["']/i.test(html);
   out.html=html;
   return out;
 }
@@ -335,26 +339,45 @@ function buildScraperYAML(url,kinds,rows,searchUrl){
  for(const r of rows){
   if(!r.selector||!r.selector.trim())continue;
   n++;
-  y+=' '+r.key+': {selector: '+JSON.stringify(r.selector.trim())+', attr: '+(r.attr||'text')+(r.transform&&r.transform!=='text'?', transform: '+r.transform:'')+'}'+(r.hint?'  # sample: '+r.hint:'')+'\n';
+  const multi=(r.key==='catNames'||r.key==='performers'||r.key==='covers')?', multi: true':'';
+  y+=' '+r.key+': {selector: '+JSON.stringify(r.selector.trim())+', attr: '+(r.attr||'text')+(r.transform&&r.transform!=='text'?', transform: '+r.transform:'')+multi+'}'+(r.hint?'  # sample: '+r.hint:'')+'\n';
  }
  if(!n)y+=' {}   # no selectors mapped yet — edit before running\n';
  return y;
 }
 function prefillStructureRows(kinds,det){
  const rows=[];
+ const LDL='script[type="application/ld+json"]';     // JSON-LD source element
+ const ldKey=(k)=>new RegExp('["\']'+k+'["\']\\s*:').test(det.ld||'');
+ const ld=(key)=>({sel:LDL,attr:'ld:'+key});
  for(const k of (kinds&&kinds.length?kinds:['scene'])){
   for(const [key,label,transform] of STRUCT_FIELDS[k]){
    let sel='',attr='text',hint='';
-   if(key==='title'||key==='name'){sel=det.h1?'h1':det.titleSel;attr=det.h1?'text':det.titleAttr;hint=det.title||''}
-   if(['poster_f','cover_a','photo'].includes(key)&&det.poster){sel='meta[property="og:image"]';attr='content';hint=det.poster}
-   if(key==='desc'&&det.desc){sel='meta[property="og:description"]';attr='content';hint=det.desc}
+   if(key==='title'||key==='name'){
+    if(det.h1){sel='h1';attr='text';hint=det.h1}
+    else if(det.title&&det.titleSel!=='title'){sel=det.titleSel;attr=det.titleAttr;hint=det.title}
+    else if(ldKey('name')&&det.ldIsVideo){sel=ld('name').sel;attr='ld:name';hint='(JSON-LD) '+det.title}
+    else if(det.title){sel=det.titleSel;attr=det.titleAttr;hint=det.title}
+   }
+   if(['poster_f','cover_a','photo'].includes(key)){
+    if(det.poster){sel='meta[property="og:image"]';attr='content';hint=det.poster}
+    else if(ldKey('thumbnailUrl')&&det.ldIsVideo){sel=ld('thumbnailUrl').sel;attr='ld:thumbnailUrl';hint='(JSON-LD)'}
+   }
+   if(key==='desc'){
+    if(det.desc){sel='meta[property="og:description"]';attr='content';hint=det.desc}
+    else if(ldKey('description')&&det.ldIsVideo){sel=ld('description').sel;attr='ld:description';hint='(JSON-LD)'}
+   }
    if(key==='date'&&!sel&&/<time[^>]+datetime=/.test(det.html||'')){sel='time';attr='datetime'}
-   if(key==='durationMin'&&det.hasDuration){
-    if(/PT\d/.test(det.html||'')){sel='[itemprop="duration"],meta[property="og:duration"]';attr='content'}
-    else if(/itemprop=["']duration/.test(det.html||'')){sel='[itemprop="duration"]';attr='content'}
-    else{sel='[class*="duration"]';attr='text'}
+   if(key==='date'&&!sel&&det.hasUpload){sel='[itemprop="uploadDate"],meta[property="article:published_time"]';attr='content'}
+   if(key==='date'&&!sel&&ldKey('datePublished')&&det.ldIsVideo){sel=ld('datePublished').sel;attr='ld:datePublished';hint='(JSON-LD)'}
+   if(key==='durationMin'){
+    if(/itemprop=["']duration/.test(det.html||'')){sel='[itemprop="duration"]';attr='content'}
+    else if(/PT\d/.test(det.html||'')){sel='[itemprop="duration"],meta[property="og:duration"]';attr='content'}
+    else if(ldKey('duration')&&det.ldIsVideo){sel=ld('duration').sel;attr='ld:duration';hint='(JSON-LD)'}
+    else if(det.hasDuration){sel='[class*="duration"]';attr='text'}
    }
    if(key==='catNames'&&det.hasTag){sel='a[class*="tag"],a[class*="category"],a[class*="genre"]';attr='text'}
+   if(key==='performers'&&!sel&&det.hasCast){sel='[data-track="PORNSTAR_NAME"],a[class*="model"],a[class*="performer"],a[class*="cast"]';attr='text';hint='(comma list in the yaml)'}
    rows.push({key,label,transform,selector:sel,attr,hint});
   }
  }
