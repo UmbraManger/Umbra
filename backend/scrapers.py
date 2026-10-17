@@ -193,6 +193,24 @@ def _sel(soup, selector, attr):
     if not attr or attr == "text": return el.get_text(" ", strip=True)
     return el.get(attr)
 
+def _duration_min(raw):
+    """'12:34' / '1:02:12' / 'PT12M34S' / '75' → minutes as int; None on miss."""
+    v = str(raw).strip()
+    m = re.search(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", v, re.I)
+    if m and any(m.groups()):
+        h, mn, s = (int(g) if g else 0 for g in m.groups())
+        return h * 60 + mn + round(s / 60)
+    if ":" in v:
+        nums = [int(n) for n in re.findall(r"\d+", v)][-3:]
+        while len(nums) < 3:
+            nums.insert(0, 0)
+        h, mn, s = nums
+        return h * 60 + mn + round(s / 60)
+    m = re.search(r"\d+", v)
+    return int(m.group()) if m else None
+
+_LIST_KEYS = {"catNames", "performers", "covers"}
+
 def run_yaml(path: str, title: str = "", url: str = "") -> dict:
     with open(path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
@@ -218,9 +236,15 @@ def run_yaml(path: str, title: str = "", url: str = "") -> dict:
         t = (rule.get("transform") or "").lower()
         if t == "int":
             m = re.search(r"\d+", str(val)); val = int(m.group()) if m else None
+        elif t == "duration":
+            val = _duration_min(val)
         elif t == "lower": val = str(val).lower()
         elif t == "title": val = str(val).title()
-        if val not in (None, ""): out[key] = val
+        if val in (None, ""): continue
+        if key in _LIST_KEYS:            # the fetch flow consumes these as arrays
+            val = [x.strip() for x in str(val).split(",") if x.strip()]
+            if not val: continue
+        out[key] = val
     return out
 
 @_locked

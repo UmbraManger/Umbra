@@ -238,6 +238,31 @@ class YamlScraperTests(IsolatedCase):
         with self.assertRaises(ValueError):
             scrapers.run_yaml(p, title="x")
 
+    def test_duration_transform_variants(self):
+        for raw, mins in [("12:34", 13), ("1:02:12", 62), ("PT12M34S", 13),
+                          ("PT1H02M", 62), ("75 min", 75), ("", None)]:
+            self.assertEqual(scrapers._duration_min(raw), mins, raw)
+
+    def test_list_keys_split_into_arrays(self):
+        y = ('search: {url: "https://s.test/?q={title}"}\nfields:\n'
+             ' catNames: {selector: "span.cat", attr: text}\n'
+             ' performers: {selector: "span.cast", attr: text}'
+             '   # a, b ,  → ["a","b"]\n')
+        html = ('<span class="cat">Lesbians, Anal</span>'
+                '<span class="cast">Angela White,  Abella Danger</span>')
+        with mock.patch.object(scrapers, "FakeResponseRequested", False, create=True):
+            pass
+        p = self.tmpfile("list.yml", y.encode())
+        class R:  # noqa: E701
+            text = html
+            status_code = 200
+            def raise_for_status(self): pass
+        with mock.patch.object(scrapers.requests, "get", return_value=R()), \
+                _stub_public_dns():
+            out = scrapers.run_yaml(p, title="t")
+        self.assertEqual(out, {"catNames": ["Lesbians", "Anal"],
+                               "performers": ["Angela White", "Abella Danger"]})
+
 
 class SiteRoutingTests(IsolatedCase):
     def test_no_matching_scraper_is_a_clear_error(self):

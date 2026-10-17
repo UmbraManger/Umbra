@@ -21,6 +21,44 @@ test('buildScraperYAML maps the checked kinds across all three content types', (
   assert.ok(!out.includes('poster_f'), 'cleared selectors must not leak into the yaml');
 });
 
+test('name falls back to the <title> tag (and its selector) when og:/h1 are missing', () => {
+  const w = createWindow();
+  const rows = w.eval(`prefillStructureRows(["performer"], ${JSON.stringify({
+    title: 'Angela - Site Name', titleSel: 'title', titleAttr: 'text'})})`);
+  const name = rows.find(r => r.key === 'name');
+  assert.strictEqual(name.selector, 'title');
+  assert.strictEqual(name.attr, 'text');
+  assert.strictEqual(name.hint, 'Angela - Site Name');
+});
+
+test('toSearchPattern converts a pasted search link into a {title} pattern', () => {
+  const w = createWindow();
+  const t = exp => w.eval(`toSearchPattern(${exp})`);
+  assert.strictEqual(t("'https://s.test/search?q=Angela+White'"),
+                     'https://s.test/search?q={title}');
+  assert.strictEqual(t("'https://s.test/?search_query=thing&page=2'"),
+                     'https://s.test/?search_query={title}&page=2');
+  assert.strictEqual(t("'https://s.test/files?cat=abc'"),    // first valued param wins
+                     'https://s.test/files?cat={title}');
+  assert.strictEqual(t("'https://s.test/browse'"), '');      // nothing parameterized
+  assert.strictEqual(t("'https://s.test/search?q={title}'"), // already fine
+                     'https://s.test/search?q={title}');
+});
+
+test('prefillStructureRows maps duration + category selectors the page exposes', () => {
+  const w = createWindow();
+  const rows = w.eval(`prefillStructureRows(["scene"], ${JSON.stringify({
+    hasTag: true, hasDuration: true,
+    html: '<time datetime="2024-05-01"></time><span class="tag">X</span>PT13M'})})`);
+  const dur = rows.find(r => r.key === 'durationMin');
+  assert.strictEqual(dur.transform, 'duration');
+  assert.ok(dur.selector, 'duration gets a selector when the page carries one');
+  const cats = rows.find(r => r.key === 'catNames');
+  assert.ok(cats.selector, 'categories get a selector when tag links exist');
+  const cast = rows.find(r => r.key === 'performers');
+  assert.ok(cast, 'scene rows carry the cast field');
+});
+
 test('buildScraperYAML with nothing mapped still yields parseable yaml', () => {
   const w = createWindow();
   const out = w.eval('buildScraperYAML("", [], [])');

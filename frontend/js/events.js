@@ -117,8 +117,9 @@ document.addEventListener('click',e=>{
      const html=$('#hs-html',bx).value;
      if(html.trim().length<30){toast('Paste The Page HTML (At Least A Few Tags)','alert-triangle');return}
      const url=$('#hs-url',bx).value.trim();
-     const searchUrl=$('#hs-search',bx).value.trim();
-     if(searchUrl&&!searchUrl.includes('{title}')){toast('The Search URL Pattern Needs A {title} Placeholder','alert-triangle');return}
+     const searchUrl=toSearchPattern($('#hs-search',bx).value.trim());
+     if($('#hs-search',bx).value.trim()&&!searchUrl){toast('That Link Has No Search Parameter To Turn Into {title} — Try A Pattern Like ?q=...','alert-triangle');return}
+     if(searchUrl)$('#hs-search',bx).value=searchUrl;   // show what it became
      const kinds=KIND_LIST.filter(k=>$('#hs-k-'+k,bx).checked);
      if(!kinds.length){toast('Build Fields For At Least One Content Type','alert-triangle');return}
      const det=detectStructure(html);
