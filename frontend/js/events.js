@@ -65,28 +65,31 @@ document.addEventListener('click',e=>{
    if(!['py','yml','yaml'].includes(ext)){toast('Only Python (.py) Or YAML (.yml/.yaml) Files','alert-triangle');return}
    if(!Sync.on){toast('Connect The App Backend To Install External Scrapers','alert-triangle');return}
    openModal([{title:'Assign Scraper',html:()=>`
-    <div class="cmsg" style="margin-bottom:12px">Assign <b>${esc(f.name)}</b> To A Content Type. Enabled Scrapers Appear As Sources In The "Get Information" Dialog For That Kind.</div>
-    <div><label class="flab">Assign To</label><select class="field" id="scr-add-kind">${KIND_LIST.map(k=>`<option value="${k}">${kindLabel(k)}</option>`).join('')}</select></div>
+    <div class="cmsg" style="margin-bottom:12px">Assign <b>${esc(f.name)}</b> To One Or More Content Types. Enabled Scrapers Appear As Sources In The "Get Information" Dialog For Those Kinds.</div>
+    <div><label class="flab">Assign To</label><div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">${KIND_LIST.map(k=>`<label class="ckrow"><input type="checkbox" id="scr-k-${k}" ${k==='scene'?'checked':''}>${kindLabel(k)}</label>`).join('')}</div></div>
     ${ext==='py'?`<label class="ckrow" style="margin-top:12px"><input type="checkbox" id="scr-py-ok">I Understand This Python Scraper Executes As Local Code On This Machine</label>`:''}`,
     footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="scr-add-save"><i data-lucide="check"></i>Add Scraper</button>`,
     mount(){
      $('#scr-add-save').addEventListener('click',async()=>{
-      const kind=$('#scr-add-kind').value;
+      const kinds=KIND_LIST.filter(k=>$('#scr-k-'+k).checked);
+      if(!kinds.length){toast('Assign It To At Least One Content Type','alert-triangle');return}
       const isPy=ext==='py',ack=$('#scr-py-ok');
       if(isPy&&ack&&!ack.checked){toast('Confirm You Understand Python Scrapers Run As Local Code','alert-triangle');return}
       const btn=$('#scr-add-save');btn.disabled=true;
       try{
-       const fd=new FormData();fd.append('file',f,f.name);fd.append('kind',kind);
+       const fd=new FormData();fd.append('file',f,f.name);
+       const sp=new URLSearchParams();kinds.forEach(k=>sp.append('kind',k));
        if(isPy){
-        fd.append('confirm','I UNDERSTAND PYTHON SCRAPERS RUN AS LOCAL CODE');
+        sp.append('confirm','I UNDERSTAND PYTHON SCRAPERS RUN AS LOCAL CODE');
         if(!settings.pyScrapers){settings.pyScrapers=true;saveSettings()}
        }
-       const r=await fetch('/api/scrapers/file',{method:'POST',body:fd});
+       const r=await fetch('/api/scrapers/file?'+sp,{method:'POST',body:fd});
        if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||'Upload Failed')}
+       const j=await r.json();
        await refreshScrapers();
        closeModal();
        renderSettings();icons();
-       toast('Scraper Added - Assigned To '+kindLabel(kind),'file-code');
+       toast('Scraper Added - Assigned To '+((j&&j.kinds)?j.kinds.map(kindLabel).join(' · '):kinds.map(kindLabel).join(' · ')),'file-code');
       }catch(e){btn.disabled=false;toast(String(e.message||e),'alert-triangle')}
      });
     }}],0,480);
@@ -94,53 +97,68 @@ document.addEventListener('click',e=>{
   inp.click();
  }
  else if(act==='scr-html'){
-  openModal([{title:'Import HTML Structure',html:()=>`
-   <div class="cmsg" style="margin-bottom:12px">Paste The Page's HTML Below (View Source → Copy), Or Just Its URL. The App Reads The Meta Structure And Suggests A Field Mapping For The Scraper.</div>
+  openModal([{title:'Build Scraper From HTML',html:()=>`
+   <div class="cmsg" style="margin-bottom:12px">Paste The Page's HTML Below (View Source → Copy), Load A Saved <b>.html</b> File, Or Just Give Its URL. The App Reads The Structure And Builds An Editable Field Mapping That Becomes A Working YAML Scraper.</div>
    <div class="frow" style="max-width:none">
     <div><label class="flab">Page URL (Optional)</label><input class="field" id="hs-url" placeholder="https://site.com/title"></div>
-    <div><label class="flab">Assign To</label><select class="field" id="hs-kind"><option value="movie">Movie</option><option value="scene">Scene</option><option value="performer">Performer</option></select></div>
    </div>
-   <div style="margin-top:10px"><label class="flab">Page HTML</label><textarea class="field mono" id="hs-html" rows="8" placeholder="<html>...</html>" style="font-size:11px"></textarea></div>`,
-   footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="hs-parse"><i data-lucide="scan-text"></i>Analyze Structure</button>`,
-   mount(){
-    $('#hs-parse').addEventListener('click',()=>{
-     const html=$('#hs-html').value,kind=$('#hs-kind').value;
+   <div style="margin-top:8px"><label class="flab">Build Fields For</label><div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">${KIND_LIST.map(k=>`<label class="ckrow"><input type="checkbox" id="hs-k-${k}" ${k==='scene'?'checked':''}>${kindLabel(k)}</label>`).join('')}</div></div>
+   <div style="margin-top:10px"><label class="flab">Page HTML</label>
+    <button class="btn sm" id="hs-file-btn" style="margin-top:4px"><i data-lucide="file-up"></i>Load HTML File</button>
+    <textarea class="field mono" id="hs-html" rows="8" placeholder="<html>...</html>" style="font-size:11px;margin-top:6px"></textarea></div>`,
+   footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="hs-parse"><i data-lucide="scan-text"></i>Build Mapping</button>`,
+   mount(bx){
+    const fin=document.createElement('input');fin.type='file';fin.accept='.html,.htm';fin.style.display='none';
+    fin.addEventListener('change',()=>{const fh=fin.files[0];if(!fh)return;
+     const rd=new FileReader();rd.onload=()=>{$('#hs-html',bx).value=rd.result;toast('HTML Loaded - '+fh.name,'file-up')};rd.readAsText(fh)});
+    $('#hs-file-btn',bx).addEventListener('click',()=>fin.click());
+    $('#hs-parse',bx).addEventListener('click',()=>{
+     const html=$('#hs-html',bx).value;
      if(html.trim().length<30){toast('Paste The Page HTML (At Least A Few Tags)','alert-triangle');return}
+     const url=$('#hs-url',bx).value.trim();
+     const kinds=KIND_LIST.filter(k=>$('#hs-k-'+k,bx).checked);
+     if(!kinds.length){toast('Build Fields For At Least One Content Type','alert-triangle');return}
      const det=detectStructure(html);
-     openModal([{title:'HTML Structure - Suggested Mapping',html:()=>`
-      <div class="cmsg" style="margin-bottom:12px">Analysis Of The Provided ${det.detected.length?'HTML - Patterns Detected: <b>'+det.detected.map(esc).join(', ')+'</b>':'HTML'}:</div>
-      <div class="kv"><span class="kl">Title</span><span class="kvs" style="word-break:break-all">${esc(det.title||'-')}</span></div>
-      <div class="kv"><span class="kl">Poster / Cover</span><span class="kvs" style="word-break:break-all">${esc(det.poster||'-')}</span></div>
-      <div class="kv"><span class="kl">Description</span><span class="kvs" style="word-break:break-all">${esc(det.desc?det.desc.slice(0,120)+(det.desc.length>120?'...':''):'-')}</span></div>
-      <p class="note" style="margin-top:14px">This Mapping Will Be Saved With The New <b>${kindLabel(kind)}</b> Scraper Definition. Your External Python/YAML Runner Can Use The Same Selectors To Fetch These Fields.</p>`,
+     const rows=prefillStructureRows(kinds,det);
+     openModal([{title:'Field Mapping',html:()=>`
+      <div class="cmsg" style="margin-bottom:12px">Analysis Of The Provided HTML${det.detected.length?' - Patterns Detected: <b>'+det.detected.map(esc).join(', ')+'</b>':''}. Each Row Becomes A Field Extractor — Fill In A CSS Selector, Or Clear It To Skip That Field.</div>
+      ${rows.map((r,i)=>{
+       const attrs=['text','content','src','href'];
+       return `<div style="margin-bottom:10px"><div class="flab">${esc(r.label)} <span class="dim mono">(${esc(r.key)}${r.transform!=='text'?' · '+r.transform:''})</span></div>
+       <div style="display:flex;gap:6px;margin-top:4px"><input class="field mono" style="flex:1" data-mr="${i}" data-mf="sel" value="${esc(r.selector||'')}" placeholder="css selector">
+        <select class="field" style="width:110px;flex-shrink:0" data-mr="${i}" data-mf="attr">${attrs.map(v=>`<option ${v===(r.attr||'text')?'selected':''}>${v}</option>`).join('')}</select></div>
+       ${r.hint?`<div class="dim" style="font-size:11px;margin-top:2px">sample: ${esc(String(r.hint).slice(0,90))}</div>`:''}</div>`}).join('')}
+      <p class="note" style="margin-top:10px">Saved As A YAML Scraper Assigned To: <b>${kinds.map(kindLabel).join(' · ')}</b>. Open Settings › Scanning Any Time To Re-Build Or Tweak Selectors.</p>`,
       footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="hs-save"><i data-lucide="check"></i>Save As Scraper</button>`,
-      mount(){
-       $('#hs-save').addEventListener('click',async()=>{
-        const url=$('#hs-url')?$('#hs-url').value.trim():'';
+      mount(b2){
+       $('#hs-save',b2).addEventListener('click',async()=>{
+        rows.forEach((r,i)=>{
+         ['sel','attr'].forEach(v=>{
+          const el=b2.querySelector('[data-mr="'+i+'"][data-mf="'+v+'"]');
+          if(el)r[v]=el.value;
+         });
+        });
         if(!Sync.on){toast('Connect The App Backend To Install External Scrapers','alert-triangle');return}
-        const btn=$('#hs-save');btn.disabled=true;
-        const name=(url?parseSourceName(url):'html-mapping')+'-structure.yaml';
-        const yamlText='# Auto-Detected From Pasted HTML - Fill In Real CSS Selectors Before Running On Other Pages\n'+
-         'kind: '+kind+'\n'+(url?'name: '+JSON.stringify(url)+'\n':'')+
-         'fields:\n'+
-         ' title: {selector: "", attr: text}   # Detected Sample: '+JSON.stringify(det.title||'')+'\n'+
-         ' poster_f: {selector: "", attr: src}  # Detected Sample: '+JSON.stringify(det.poster||'')+'\n'+
-         ' desc: {selector: "", attr: text}     # Detected Sample: '+JSON.stringify(det.desc||'')+'\n';
+        const btn=$('#hs-save',b2);btn.disabled=true;
+        const name=(url?parseSourceName(url):'html-mapping')+'-scraper.yaml';
+        const yamlText=buildScraperYAML(url,kinds,rows);
         try{
-         const fd=new FormData();fd.append('file',new Blob([yamlText],{type:'text/yaml'}),name);fd.append('kind',kind);
-         const r=await fetch('/api/scrapers/file',{method:'POST',body:fd});
+         const fd=new FormData();fd.append('file',new Blob([yamlText],{type:'text/yaml'}),name);
+         const sp=new URLSearchParams();kinds.forEach(k=>sp.append('kind',k));
+         const r=await fetch('/api/scrapers/file?'+sp,{method:'POST',body:fd});
          if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||'Upload Failed')}
          const j=await r.json();
-         if(j&&j.id)await fetch(`/api/scrapers/${j.id}/structure`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(det)}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status)}).catch(()=>toast('Scraper Structure Could Not Be Saved','alert-triangle'));
+         const mapped=rows.filter(r=>r.selector&&r.selector.trim()).length;
+         if(j&&j.id)await fetch(`/api/scrapers/${j.id}/structure`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...det,kind:kinds,fields:mapped})}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status)}).catch(()=>toast('Meta Structure Could Not Be Saved','alert-triangle'));
          await refreshScrapers();
          closeModal();
          renderSettings();icons();
-         toast('Structure Saved - Scraper Added For '+kindLabel(kind),'file-code');
+         toast('Scraper Built - '+mapped+' Field'+(mapped===1?'':'s')+' Mapped For '+kinds.map(kindLabel).join(' · '),'file-code');
         }catch(e){btn.disabled=false;toast(String(e.message||e),'alert-triangle')}
        });
-      }}],0,640);
+      }}],0,660);
     });
-   }}],0,640);
+   }}],0,660);
  }
  else if(act==='scr-toggle'){
   const sid=a.dataset.id;
@@ -628,9 +646,8 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
     const btn=document.getElementById('bk-rst');
     const busy=(on)=>{if(!btn)return;btn.disabled=on;if(on){toast('Restoring...','wait');btn.querySelector('i').style.display='none'}};
     try{
-    const fd=new FormData();fd.append('file',f);fd.append('confirm','RESTORE');
-    if(pw)fd.append('passphrase',pw);
-    const r=await fetch('/api/backup/restore',{method:'POST',body:fd});
+    const fd=new FormData();fd.append('file',f);
+    const r=await fetch('/api/backup/restore?confirm=RESTORE',{method:'POST',body:fd});
     if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||('HTTP '+r.status))}
     closeModal();toast('Backup Restored - Reloading...','history');
     setTimeout(()=>location.reload(),900);

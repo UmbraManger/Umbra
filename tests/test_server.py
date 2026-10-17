@@ -44,6 +44,19 @@ class ServerCase(IsolatedCase):
         return self.client.get("/api/library", headers=self.h).json()
 
 
+class ScraperUploadTests(ServerCase):
+    def test_multi_kind_upload(self):
+        r = self.client.post("/api/scrapers/file", headers=self.h,
+                             files={"file": ("multi.yml", b"fields: {}", "text/yaml")},
+                             params=[("kind", "scene"), ("kind", "performer")])
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["kinds"], ["scene", "performer"])
+        e = next(s for s in self.client.get("/api/scrapers", headers=self.h).json()
+                 if s["name"] == "multi.yml")
+        self.assertEqual(e["kind"], ["scene", "performer"])
+        self.client.delete(f'/api/scrapers/{e["id"]}', headers=self.h)
+
+
 class SecurityTests(ServerCase):
     def test_api_requires_the_token(self):
         self.assertEqual(self.client.get("/api/ping").status_code, 403)
@@ -242,7 +255,7 @@ class DestructiveEndpointTests(ServerCase):
     def test_wipe_and_restore_need_explicit_confirmation(self):
         self.assertEqual(self.client.post("/api/wipe", json={}, headers=self.h).status_code, 400)
         r = self.client.post("/api/backup/restore", headers=self.h,
-                             files={"file": ("b.zip", b"x")}, data={"confirm": ""})
+                             files={"file": ("b.zip", b"x")}, params={"confirm": ""})
         self.assertEqual(r.status_code, 400)
 
     def test_wipe_empties_the_library(self):
@@ -275,7 +288,7 @@ class DestructiveEndpointTests(ServerCase):
                 worker = threading.Thread(
                     target=self.client.post,
                     args=["/api/backup/restore"],
-                    kwargs={"data": {"confirm": "RESTORE"}, "files": files, "headers": self.h},
+                    kwargs={"params": {"confirm": "RESTORE"}, "files": files, "headers": self.h},
                     daemon=True)
                 worker.start()
                 ping = self.client.get("/api/ping", headers=self.h)
@@ -290,7 +303,7 @@ class DestructiveEndpointTests(ServerCase):
         r = self.client.post(
             "/api/backup/restore",
             headers=self.h,
-            data={"confirm": "RESTORE"},
+            params={"confirm": "RESTORE"},
             files=big,
         )
         self.assertEqual(r.status_code, 413, r.text)

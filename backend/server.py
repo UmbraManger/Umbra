@@ -1,8 +1,8 @@
 """Umbra API — all routes under /api. Frontend is served at /."""
 import os, sys, json, re, time, secrets, hmac, logging
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import urlparse
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Body, Request
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form, Body, Request
 from fastapi.responses import Response, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -623,18 +623,22 @@ def scan_undone(body: dict = Body(...)):
 def scrapers_list(): return scraper_engine.list_all()
 
 @app.post("/api/scrapers/file")
-async def scraper_upload(file: UploadFile = File(...), kind: str = Form("movie"),
-                         confirm: str = Form("")):
+async def scraper_upload(file: UploadFile = File(...),
+                         # multi-classification comes as repeated ?kind= params —
+                         # Form fields next to UploadFile break multipart parsing
+                         # on this fastapi/starlette combo (even a single one)
+                         confirm: str = Query(""),
+                         kinds: List[str] = Query(None, alias="kind")):
     content = await file.read()
     if (file.filename or "").lower().endswith(".py") and \
             confirm != "I UNDERSTAND PYTHON SCRAPERS RUN AS LOCAL CODE":
         raise HTTPException(400, "Python scrapers execute as local code — send "
                                 'confirm="I UNDERSTAND PYTHON SCRAPERS RUN AS LOCAL CODE"')
     try:
-        sid = scraper_engine.add(file.filename, content, kind)
+        sid, asg = scraper_engine.add(file.filename, content, kinds or ["movie"])
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return {"id": sid}
+    return {"id": sid, "kinds": asg}
 
 @app.post("/api/scrapers/{sid}/toggle")
 def scraper_toggle(sid: str):
@@ -996,9 +1000,12 @@ def backup_export():
         headers={"Content-Disposition": f'attachment; filename="Umbra-Backup-{stamp}.zip"'})
 
 @app.post("/api/backup/restore")
-async def backup_restore(request: Request, file: UploadFile = File(...), confirm: str = Form("")):
+async def backup_restore(request: Request, file: UploadFile = File(...),
+                         # query, not Form: Form fields next to UploadFile break
+                         # multipart parsing on this fastapi/starlette combo
+                         confirm: str = Query("")):
     if confirm != "RESTORE":
-        raise HTTPException(400, 'confirmation required: send form field confirm="RESTORE"')
+        raise HTTPException(400, 'confirmation required: send query param confirm="RESTORE"')
     # 413 on oversized archives before we read a single byte.
     if int(request.headers.get("content-length") or 0) > 50 * 1024 * 1024:
         raise HTTPException(413, "restore archive limited to 50 MB")

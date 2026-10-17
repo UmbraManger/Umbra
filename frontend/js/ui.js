@@ -286,16 +286,51 @@ function parseSourceName(url){
  try{const u=new URL(url.startsWith('http')?url:'https://'+url);return u.hostname.replace(/^www\./,'')}catch(e){return url.slice(0,32)}
 }
 function detectStructure(html){
- const out={detected:[],title:null,poster:null,desc:null};
- const grab=re=>{const m=re.exec(html);return m?m[1].trim():null};
- out.title=grab(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)||grab(/<title[^>]*>([^<]{2,150})<\/title>/i);
- out.poster=grab(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)/i);
- out.desc=grab(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)/i)||grab(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)/i);
- if(/<h1[^>]*class=["'][^"']*(title|name)[^"']*["']/i.test(html))out.detected.push('H1 Title Block');
- if(/itemprop="(name|actor|director)"/i.test(html))out.detected.push('Schema.org Microdata');
- if(/application\/ld\+json/i.test(html))out.detected.push('JSON-LD Structured Data');
- if(/class=["'][^"']*(poster|cover|thumb)[^"']*["']/i.test(html))out.detected.push('Poster / Cover Class');
- if(/class=["'][^"']*(cast|actor|performer)[^"']*["']/i.test(html))out.detected.push('Cast List');
- if(/data-(original|src|lazy)[-=]/i.test(html))out.detected.push('Lazy-Loaded Images');
- return out;
+  const out={detected:[],title:null,poster:null,desc:null,h1:null};
+  const grab=re=>{const m=re.exec(html);return m?m[1].trim():null};
+  out.title=grab(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)||grab(/<title[^>]*>([^<]{2,150})<\/title>/i);
+  out.poster=grab(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)/i);
+  out.desc=grab(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)/i)||grab(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)/i);
+  out.h1=grab(/<h1[^>]*>([^<]{1,120})<\/h1>/i);
+  if(/<h1[^>]*class=["'][^"']*(title|name)[^"']*["']/i.test(html))out.detected.push('H1 Title Block');
+  if(/itemprop="(name|actor|director)"/i.test(html))out.detected.push('Schema.org Microdata');
+  if(/application\/ld\+json/i.test(html))out.detected.push('JSON-LD Structured Data');
+  if(/class=["'][^"']*(poster|cover|thumb)[^"']*["']/i.test(html))out.detected.push('Poster / Cover Class');
+  if(/class=["'][^"']*(cast|actor|performer)[^"']*["']/i.test(html))out.detected.push('Cast List');
+  if(/data-(original|src|lazy)[-=]/i.test(html))out.detected.push('Lazy-Loaded Images');
+  return out;
+}
+/* Field schema for the HTML→scraper builder: metadata fields the movie,
+   scene and performer forms know how to apply (forms.js collect/apply). */
+const STRUCT_FIELDS={
+ movie:[['title','Title','text'],['year','Year','int'],['poster_f','Poster','src'],['poster_b','Back Poster','src'],['desc','Description','text'],['studio','Studio','text']],
+ scene:[['title','Title','text'],['date','Date','text'],['cover_a','Cover','src'],['desc','Description','text'],['studio','Studio','text']],
+ performer:[['name','Name','text'],['birth','Birth Date','text'],['nationality','Nationality','text'],['ethnicity','Ethnicity','text'],['measurements','Measurements','text'],['height','Height (cm)','int'],['weight','Weight (kg)','int'],['twitter','Twitter','text'],['instagram','Instagram','text'],['onlyfans','OnlyFans','text'],['photo','Photo','src']]
+};
+function buildScraperYAML(url,kinds,rows){
+ let y='# Scraper Built From HTML Structure Mapping\n# kinds: '+(kinds&&kinds.length?kinds.join(', '):'scene')+'\n';
+ if(url)y+='# sample: '+url+'\n';
+ y+='fields:\n';
+ let n=0;
+ for(const r of rows){
+  if(!r.selector||!r.selector.trim())continue;
+  n++;
+  y+=' '+r.key+': {selector: '+JSON.stringify(r.selector.trim())+', attr: '+(r.attr||'text')+(r.transform&&r.transform!=='text'?', transform: '+r.transform:'')+'}'+(r.hint?'  # sample: '+r.hint:'')+'\n';
+ }
+ if(!n)y+=' {}   # no selectors mapped yet — edit before running\n';
+ return y;
+}
+function prefillStructureRows(kinds,det){
+ const rows=[];
+ for(const k of (kinds&&kinds.length?kinds:['scene'])){
+  for(const [key,label,transform] of STRUCT_FIELDS[k]){
+   let sel='',attr='text',hint='';
+   if((key==='title'||key==='name')&&det.title){sel='meta[property="og:title"]';attr='content';hint=det.title}
+   if(['poster_f','cover_a','photo'].includes(key)&&det.poster){sel='meta[property="og:image"]';attr='content';hint=det.poster}
+   if(key==='desc'&&det.desc){sel='meta[property="og:description"]';attr='content';hint=det.desc}
+   if(key==='name'&&det.h1){sel='h1';attr='text';hint=det.h1}
+   rows.push({key,label,transform,selector:sel,attr,hint});
+  }
+ }
+ return rows;
 }

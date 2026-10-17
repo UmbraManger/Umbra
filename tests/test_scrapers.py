@@ -1,4 +1,4 @@
-import os
+﻿import os
 import unittest
 from unittest import mock
 
@@ -32,7 +32,7 @@ class ManagementTests(IsolatedCase):
             scrapers.add("evil.exe", b"x", "movie")
 
     def test_add_list_toggle_remove(self):
-        sid = scrapers.add("site.yml", YAML, "movie")
+        sid = scrapers.add("site.yml", YAML, "movie")[0]
         [entry] = scrapers.list_all()
         self.assertTrue(entry["exists"] and entry["enabled"] and entry["size"] > 0)
         scrapers.toggle(sid)
@@ -95,8 +95,25 @@ class BundledRemovalTests(IsolatedCase):
                          "every tombstone lands, none is lost to a stale rewrite")
 
 
+class MultiAssignTests(IsolatedCase):
+    PY_SCENE = b'def scrape_scene(url):\n    return {}\n'
+
+    def test_yaml_kind_list_is_stored_as_given(self):
+        sid, kinds = scrapers.add("site.yaml", YAML, ["scene", "performer"])
+        self.assertEqual(kinds, ["scene", "performer"])
+        self.assertEqual(scrapers.list_all()[-1]["kind"], ["scene", "performer"])
+
+    def test_python_assignment_is_corrected_against_the_source(self):
+        # assigned 'movie' only, but the source proves scene work too → union
+        _, kinds = scrapers.add("s.py", self.PY_SCENE, ["movie"])
+        self.assertEqual(kinds, ["movie", "scene"])
+        # bare source evidence adds kinds the caller forgot entirely
+        _, kinds = scrapers.add("p.py", b'def scrape_performer(u):\n    ...\n', ["movie"])
+        self.assertEqual(kinds, ["movie", "performer"])
+
+
 class BrazzersActorTests(IsolatedCase):
-    """brazzers_scraper._actor_to_perf: Project1Service /v1/actors object →
+    """brazzers_scraper._actor_to_perf: Project1Service /v1/actors object â†’
     Umbra performer fields (forms.js applyToPerfForm keys)."""
     ACTOR = {'name': 'Angela White', 'gender': 'female',
              'birthday': '1985-03-04T00:00:00+00:00',
@@ -115,7 +132,7 @@ class BrazzersActorTests(IsolatedCase):
         self.assertEqual(d['gender'], 'f')
         self.assertEqual(d['birth'], '1985-03-04')
         self.assertEqual(d['nationality'], 'New South Wales, Australia')
-        self.assertEqual(d['height'], 157)            # 62 in → cm
+        self.assertEqual(d['height'], 157)            # 62 in â†’ cm
         self.assertEqual(d['weight'], 62)
         self.assertEqual(d['measurements'], '32GG-28-36')
         self.assertEqual(d['photo'], 'http://m/lg.jpg')   # lg wins over xs
@@ -135,20 +152,20 @@ class KindDetectionTests(IsolatedCase):
     SRC_MOVIE = "def _is_movie_url(href):\n    ...\n\ndef _get_movie_by_url(url):\n    ...\n\ndef scrape(**kw):\n    ...\n"
     SRC_SCENE = "def search_scenes(q):\n    ...\n\ndef scrape_scene(url):\n    ...\n\ndef search_performers(q):\n    ...\n\ndef scrape_performer(url):\n    ...\n\ndef scrape(kind=\"\"):\n    ...\n"
     # dispatch-only: no local defs, the site's scenes are reached through a
-    # shared API module — still scene-capable (brazzers-style)
+    # shared API module â€” still scene-capable (brazzers-style)
     SRC_SHADER = "def scrape(url, kind=''):\n    ...\n    if kind == 'performer':\n        return _performer(url)\n    return p1api.scene_by_url(url, SITE_URL)\n\ndef _performer(url):\n    ...\n"
 
     def test_source_is_classified_by_what_it_implements(self):
         self.assertEqual(scrapers.detect_kind(self.SRC_PERFORMER), "performer")
         self.assertEqual(scrapers.detect_kind(self.SRC_MOVIE), "movie")
-        # scenes+performers together → the dominant-kind word wins
+        # scenes+performers together â†’ the dominant-kind word wins
         self.assertEqual(scrapers.detect_kind(self.SRC_SCENE), "scene")
 
     def test_one_source_can_carry_several_kinds(self):
-        # defines both kinds → multi-classification list, best evidence first
+        # defines both kinds â†’ multi-classification list, best evidence first
         self.assertEqual(scrapers.detect_kinds(self.SRC_SCENE), ["scene", "performer"])
         # dispatches scenes through a helper module while scraping performers
-        # itself → both kinds, performer (the def) stays primary (brazzers)
+        # itself â†’ both kinds, performer (the def) stays primary (brazzers)
         self.assertEqual(scrapers.detect_kinds(self.SRC_SHADER), ["performer", "scene"])
         self.assertEqual(scrapers.detect_kind(self.SRC_SHADER), "performer")
 
@@ -192,23 +209,23 @@ class KindDetectionTests(IsolatedCase):
 
 class PythonScraperTests(IsolatedCase):
     def test_python_scrapers_are_off_by_default(self):
-        sid = scrapers.add("s.py", PY_SCRAPER, "movie")
+        sid = scrapers.add("s.py", PY_SCRAPER, "movie")[0]
         with self.assertRaisesRegex(ValueError, "disabled"):
             scrapers.run_by_id(sid, title="abc")
 
     def test_enabled_scraper_runs_and_only_gets_kwargs_it_accepts(self):
         db.save_settings({"pyScrapers": True})
-        sid = scrapers.add("s.py", PY_SCRAPER, "movie")
+        sid = scrapers.add("s.py", PY_SCRAPER, "movie")[0]
         self.assertEqual(scrapers.run_by_id(sid, title="abc", kind="movie", domain="d"),
                          {"title": "ABC"})
-        sid2 = scrapers.add("k.py", PY_KWARGS, "movie")
+        sid2 = scrapers.add("k.py", PY_KWARGS, "movie")[0]
         self.assertEqual(scrapers.run_by_id(sid2, title="a", kind="movie", domain="d")["kw"],
                          ["domain", "kind", "title", "url"])
 
 
 class YamlScraperTests(IsolatedCase):
     def test_selectors_and_transforms(self):
-        sid = scrapers.add("site.yml", YAML, "movie")
+        sid = scrapers.add("site.yml", YAML, "movie")[0]
         with mock.patch.object(scrapers.requests, "get", return_value=FakeResponse()) as g, \
                 _stub_public_dns():        # run_yaml now guards the target (P1 SSRF)
             out = scrapers.run_by_id(sid, title="My Title")
@@ -259,7 +276,7 @@ class KnownBugTests(IsolatedCase):
 # net_guard resolves the target host before fetching; example.test is reserved
 # (RFC 6761) and never resolves on this machine, so tests whose fetch should be
 # ALLOWED stub the resolver to one public address. Blocked cases use numeric
-# IPs, which getaddrinfo parses locally — no live network in any test here.
+# IPs, which getaddrinfo parses locally â€” no live network in any test here.
 _PUBLIC_DNS = [(2, 1, 6, "", ("93.184.216.34", 443))]
 
 
@@ -268,8 +285,8 @@ def _stub_public_dns():
 
 
 class YamlTargetGuardTests(IsolatedCase):
-    """Regression (P1, SSRF): run_yaml's target — the caller-supplied url or the
-    YAML search.url template — must pass net_guard before any fetch."""
+    """Regression (P1, SSRF): run_yaml's target â€” the caller-supplied url or the
+    YAML search.url template â€” must pass net_guard before any fetch."""
 
     def _yaml(self, tpl: str) -> str:
         return self.tmpfile("guard.yml",
@@ -309,7 +326,7 @@ class YamlTargetGuardTests(IsolatedCase):
 
 
 class NetGuardTests(unittest.TestCase):
-    """safe_image_url unit checks — numeric hosts only, so getaddrinfo parses
+    """safe_image_url unit checks â€” numeric hosts only, so getaddrinfo parses
     them locally and no DNS query leaves the machine."""
 
     def test_guard_blocks_loopback(self):
@@ -350,7 +367,7 @@ class _StubSession:
 
 class SafeGetTests(unittest.TestCase):
     """P2: safe_get re-validates every redirect hop (Gap 2, blind redirects).
-    All stubs — no live network: the loopback hop is a numeric IP (parsed
+    All stubs â€” no live network: the loopback hop is a numeric IP (parsed
     locally), allowed hostnames run with the resolver stubbed to a public IP."""
 
     def test_safe_get_blocks_redirect_to_loopback(self):

@@ -33,7 +33,7 @@ class BackupCase(IsolatedCase):
         db.execute("INSERT INTO movies(id,title,year) VALUES(?,?,?)", ("mv-1", "Alpha", 2020))
         db.save_settings({"theme": "dark"})
         self.img_id = crypto.store_image(PNG, "image/png")
-        self.scraper_id = scrapers.add("site.yml", b"fields: {}", "movie")
+        self.scraper_id = scrapers.add("site.yml", b"fields: {}", "movie")[0]
 
     def titles(self):
         return [r["title"] for r in db.query("SELECT title FROM movies")]

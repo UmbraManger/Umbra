@@ -80,10 +80,20 @@ def _scraper_path(s: dict) -> str | None:
     return p if os.path.dirname(p) == root else None
 
 @_locked
-def add(filename: str, content: bytes, kind) -> str:
+def add(filename: str, content: bytes, kind) -> tuple:
+    """Install an uploaded scraper. Returns (meta_id, kinds). kind accepts a
+    single kind or a multi-assignment list (movie/scene/performer checkboxes).
+    Python sources are sanity-checked against what the bytes actually implement:
+    assignment kinds are kept, and evidence-backed kinds the caller missed are
+    corrected in by merging detect_kinds' findings (display-only labels)."""
     ext = filename.rsplit(".", 1)[-1].lower()
     if ext not in ("py", "yml", "yaml"):
         raise ValueError("only .py / .yml / .yaml")
+    kinds = [k for k in (kind if isinstance(kind, (list, tuple, set)) else ([kind] if kind else []))
+             if k in ("movie", "scene", "performer")]
+    if ext == "py":
+        have = set(kinds) | set(detect_kinds(content.decode("utf-8", "replace")))
+        kinds = [k for k in ("movie", "scene", "performer") if k in have] or ["scene"]
     fid = uuid.uuid4().hex[:10]
     fname = f"{fid}.{ext}"
     with open(os.path.join(db.SCRAPER_DIR, fname), "wb") as f:
@@ -91,10 +101,9 @@ def add(filename: str, content: bytes, kind) -> str:
     meta = _meta()
     meta.append({"id": fid, "name": filename, "file": fname,
                  "type": "python" if ext == "py" else "yaml",
-                 "kind": kind if isinstance(kind, list) else [kind],
-                 "enabled": True, "structure": None})
+                 "kind": kinds or ["movie"], "enabled": True, "structure": None})
     _save_meta(meta)
-    return fid
+    return fid, kinds
 
 @_locked
 def remove(sid):
