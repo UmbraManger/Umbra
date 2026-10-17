@@ -95,6 +95,41 @@ class BundledRemovalTests(IsolatedCase):
                          "every tombstone lands, none is lost to a stale rewrite")
 
 
+class BrazzersActorTests(IsolatedCase):
+    """brazzers_scraper._actor_to_perf: Project1Service /v1/actors object →
+    Umbra performer fields (forms.js applyToPerfForm keys)."""
+    ACTOR = {'name': 'Angela White', 'gender': 'female',
+             'birthday': '1985-03-04T00:00:00+00:00',
+             'birthPlace': 'New South Wales, Australia',
+             'height': 62, 'weight': 62, 'measurements': '32GG-28-36',
+             'aliases': [''],
+             'images': {'profile': {'0': {'lg': {'url': 'http://m/lg.jpg'},
+                                          'xs': {'url': 'http://m/xs.jpg'}}}}}
+
+    def test_v1_actor_maps_to_umbra_performer(self):
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scrapers"))
+        import brazzers_scraper as b
+        d = b._actor_to_perf(dict(self.ACTOR), "https://www.brazzers.com/pornstar/4685/x")
+        self.assertEqual(d['name'], 'Angela White')
+        self.assertEqual(d['gender'], 'f')
+        self.assertEqual(d['birth'], '1985-03-04')
+        self.assertEqual(d['nationality'], 'New South Wales, Australia')
+        self.assertEqual(d['height'], 157)            # 62 in → cm
+        self.assertEqual(d['weight'], 62)
+        self.assertEqual(d['measurements'], '32GG-28-36')
+        self.assertEqual(d['photo'], 'http://m/lg.jpg')   # lg wins over xs
+        self.assertNotIn('aliases', d)                # [""] filtered out
+        self.assertEqual(d['kind'], 'performer')
+
+    def test_metric_height_is_kept_as_is(self):
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scrapers"))
+        import brazzers_scraper as b
+        a = dict(self.ACTOR, height=157)
+        self.assertEqual(b._actor_to_perf(a)['height'], 157)
+
+
 class KindDetectionTests(IsolatedCase):
     SRC_PERFORMER = "def performer_from_url(url):\n    ...\n\ndef performer_search(n):\n    ...\n\ndef scrape(name=\"\"):\n    ...\n"
     SRC_MOVIE = "def _is_movie_url(href):\n    ...\n\ndef _get_movie_by_url(url):\n    ...\n\ndef scrape(**kw):\n    ...\n"
