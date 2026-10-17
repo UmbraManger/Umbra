@@ -99,12 +99,23 @@ class KindDetectionTests(IsolatedCase):
     SRC_PERFORMER = "def performer_from_url(url):\n    ...\n\ndef performer_search(n):\n    ...\n\ndef scrape(name=\"\"):\n    ...\n"
     SRC_MOVIE = "def _is_movie_url(href):\n    ...\n\ndef _get_movie_by_url(url):\n    ...\n\ndef scrape(**kw):\n    ...\n"
     SRC_SCENE = "def search_scenes(q):\n    ...\n\ndef scrape_scene(url):\n    ...\n\ndef search_performers(q):\n    ...\n\ndef scrape_performer(url):\n    ...\n\ndef scrape(kind=\"\"):\n    ...\n"
+    # dispatch-only: no local defs, the site's scenes are reached through a
+    # shared API module — still scene-capable (brazzers-style)
+    SRC_SHADER = "def scrape(url, kind=''):\n    ...\n    if kind == 'performer':\n        return _performer(url)\n    return p1api.scene_by_url(url, SITE_URL)\n\ndef _performer(url):\n    ...\n"
 
     def test_source_is_classified_by_what_it_implements(self):
         self.assertEqual(scrapers.detect_kind(self.SRC_PERFORMER), "performer")
         self.assertEqual(scrapers.detect_kind(self.SRC_MOVIE), "movie")
         # scenes+performers together → the dominant-kind word wins
         self.assertEqual(scrapers.detect_kind(self.SRC_SCENE), "scene")
+
+    def test_one_source_can_carry_several_kinds(self):
+        # defines both kinds → multi-classification list, best evidence first
+        self.assertEqual(scrapers.detect_kinds(self.SRC_SCENE), ["scene", "performer"])
+        # dispatches scenes through a helper module while scraping performers
+        # itself → both kinds, performer (the def) stays primary (brazzers)
+        self.assertEqual(scrapers.detect_kinds(self.SRC_SHADER), ["performer", "scene"])
+        self.assertEqual(scrapers.detect_kind(self.SRC_SHADER), "performer")
 
     def test_the_real_bundled_library_is_not_all_movies(self):
         lib = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(scrapers.__file__))), "scrapers")
@@ -114,10 +125,17 @@ class KindDetectionTests(IsolatedCase):
         for fn in sorted(os.listdir(lib)):
             if fn.endswith(".py"):
                 with open(os.path.join(lib, fn), encoding="utf-8", errors="replace") as f:
-                    kinds[fn] = scrapers.detect_kind(f.read())
-        these = set(kinds.values())
-        self.assertEqual(these, {"movie", "scene", "performer"},
-                         f"the library ships more than one group; got {kinds}")
+                    kinds[fn] = scrapers.detect_kinds(f.read())
+        self.assertTrue(all(isinstance(k, list) and k for k in kinds.values()),
+                        f"every bundled scraper needs at least one kind; got {kinds}")
+        self.assertEqual({g for ks in kinds.values() for g in ks}, {"movie", "scene", "performer"},
+                         f"the library should cover every kind; got {kinds}")
+        # trouble cases: pure bio sites stay performer-only, pure movie APIs
+        # stay movie-only, and dual dispatchers carry BOTH scene and performer
+        self.assertEqual(kinds["brazzers_scraper.py"], ["performer", "scene"])
+        self.assertEqual(kinds["evilangel_scraper.py"], ["performer", "scene"])
+        self.assertEqual(kinds["babe" "pedia_scraper.py"], ["performer"])
+        self.assertEqual(kinds["Erotik.py"], ["movie"])
 
     def test_install_bundled_migrates_old_movie_labels(self):
         """Entries installed before auto-detection (all 'movie') are re-classified
@@ -134,7 +152,7 @@ class KindDetectionTests(IsolatedCase):
              mock.patch.object(sys, "_MEIPASS", db.SCRAPER_DIR, create=True):
             scrapers.install_bundled()
         [entry] = scrapers._meta()
-        self.assertEqual(entry["kind"], "performer")
+        self.assertEqual(entry["kind"], ["performer"])
 
 
 class PythonScraperTests(IsolatedCase):

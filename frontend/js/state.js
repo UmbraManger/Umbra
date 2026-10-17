@@ -117,7 +117,9 @@ const KIND_SING={movies:'movie',scenes:'scene',performers:'performer',studios:'s
 const byIdKind=(tab,id)=>{for(const k of['movies','scenes','performers','studios','categories']){if(DB[k].find(x=>x.id===id))return KIND_SING[k]}return null};
 const byTabId=(tab,id)=>byId(KIND_SING[tab]||tab,id);
 const kindPlural=k=>({movie:'movies',scene:'scenes',performer:'performers',studio:'studios',category:'categories'})[k];
-const kindLabel=k=>({movie:'Movie',scene:'Scene',performer:'Performer',studio:'Studio',category:'Category'})[k]||k;
+const kindLabel=k=>Array.isArray(k)?k.map(x=>KIND_NAME[x]||x).join(' · '):(KIND_NAME[k]||k);
+const KIND_NAME={movie:'Movie',scene:'Scene',performer:'Performer',studio:'Studio',category:'Category'};
+const kindHas=(kinds,x)=>Array.isArray(kinds)?kinds.includes(x):kinds===x;
 const catUsage=c=>DB.movies.filter(m=>ensureArr(m.categoryIds).includes(c.id)).length+DB.scenes.filter(s=>ensureArr(s.categoryIds).includes(c.id)).length;
 const favCount=()=>DB.movies.filter(m=>m.fav).length+DB.scenes.filter(s=>s.fav).length;
 const TABS={

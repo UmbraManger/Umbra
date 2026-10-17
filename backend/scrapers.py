@@ -80,7 +80,7 @@ def _scraper_path(s: dict) -> str | None:
     return p if os.path.dirname(p) == root else None
 
 @_locked
-def add(filename: str, content: bytes, kind: str) -> str:
+def add(filename: str, content: bytes, kind) -> str:
     ext = filename.rsplit(".", 1)[-1].lower()
     if ext not in ("py", "yml", "yaml"):
         raise ValueError("only .py / .yml / .yaml")
@@ -91,7 +91,8 @@ def add(filename: str, content: bytes, kind: str) -> str:
     meta = _meta()
     meta.append({"id": fid, "name": filename, "file": fname,
                  "type": "python" if ext == "py" else "yaml",
-                 "kind": kind, "enabled": True, "structure": None})
+                 "kind": kind if isinstance(kind, list) else [kind],
+                 "enabled": True, "structure": None})
     _save_meta(meta)
     return fid
 
@@ -131,20 +132,30 @@ _KDEF = {"performer": re.compile(r"(?m)^\s*def\s+\w*(performer|pornstar|actor)\w
 _KWORD = {"performer": re.compile(r"(?<![A-Za-z])(performer|pornstar|actor)", re.I),
           "scene": re.compile(r"(?<![A-Za-z])(scene|clip|gallery)", re.I),
           "movie": re.compile(r"(?<![A-Za-z])(movie|film)", re.I)}
+# dispatch evidence: calling a kind-named function (bundled shims reach scenes
+# through p1api.scene_by_url(...) with no local defs) qualifies a kind too
+_KCALL = {"performer": re.compile(r"(?<![A-Za-z])(?:performers?|pornstars?|actors?)\w*\s*\(", re.I),
+          "scene": re.compile(r"(?<![A-Za-z])(?:scenes?|clips?|galleries?)\w*\s*\(", re.I),
+          "movie": re.compile(r"(?<![A-Za-z])(?:movies?|films?)\w*\s*\(", re.I)}
 
-def detect_kind(src: str) -> str:
-    """Classify a python scraper's primary target. Def names are strongest
-    evidence (10x); whole-file marker words break mixed scrapers. The label is
+def detect_kinds(src: str) -> list:
+    """All kinds a python scraper evidences: defining kind functions and/or
+    calling kind-named dispatchers (define OR call). Ordered best-evidence
+    first (def names 10x wording). Files with no evidence at all fall back to
+    the single most-mentioned marker word, then 'movie'. The label is
     display/default only — run_by_id always passes the caller's kind through."""
     h = {k: len(r.findall(src)) for k, r in _KDEF.items()}
-    w = {k: len(_KWORD[k].findall(src)) for k in h}
-    if h["performer"] and not (w["scene"] or w["movie"]):
-        return "performer"
-    if h["movie"] and not h["scene"]:
-        return "movie"
-    total = {k: h[k] * 10 + w[k] for k in h}
-    best = max(total, key=lambda k: (total[k], k == "scene"))
-    return best if total[best] else "movie"
+    c = {k: len(r.findall(src)) for k, r in _KCALL.items()}
+    out = sorted((k for k in h if h[k] or c[k]),
+                 key=lambda k: (h[k] * 10 + c[k], k == "scene"), reverse=True)
+    if out:
+        return out
+    w = {k: len(r.findall(src)) for k, r in _KWORD.items()}
+    best = max(w, key=lambda k: (w[k], k == "scene"))
+    return [best] if w[best] else ["movie"]
+
+def detect_kind(src: str) -> str:
+    return detect_kinds(src)[0]
 
 def run_python(path: str, payload: dict) -> dict:
     # Execution gate: Python scrapers are arbitrary local code — off by default.
@@ -233,13 +244,13 @@ def install_bundled() -> None:
         # a file whose id isn't a bundled one.
         sid = "bundled-" + fn[:-3]
         ours = next((s for s in meta if s.get("id") == sid), None)
-        kind = detect_kind(content.decode("utf-8", "replace"))
+        kinds = detect_kinds(content.decode("utf-8", "replace"))
         if ours and ours.get("file") == fn:
             with open(dst, "wb") as f:
                 f.write(content)
-            # migrate kindless-era installs: re-classify and bump the meta entry
-            if ours.get("kind") != kind and ours.get("type") == "python":
-                ours["kind"] = kind
+            # migrate single-kind-era installs: re-classify and bump the entry
+            if ours.get("kind") != kinds and ours.get("type") == "python":
+                ours["kind"] = kinds
                 changed = True
             continue
         if fn in known or os.path.exists(dst):
@@ -247,12 +258,21 @@ def install_bundled() -> None:
         with open(dst, "wb") as f:
             f.write(content)
         meta.append({"id": sid, "name": fn[:-3], "file": fn, "type": "python",
-                     "kind": kind, "enabled": False, "structure": None})
+                     "kind": kinds, "enabled": False, "structure": None})
         known.add(fn)
         changed = True
     if changed:
         _save_meta(meta)
 
+
+def _default_kind(caller_kind: str, meta_kind) -> str:
+    """Scrapers receive a single kind: the caller's, or (legacy meta) the
+    scraper's first classification when the entry stores a list."""
+    if caller_kind:
+        return caller_kind
+    if isinstance(meta_kind, list):
+        return meta_kind[0] if meta_kind else ""
+    return meta_kind or ""
 
 def run_by_id(sid: str, title: str = "", url: str = "", kind: str = "", domain: str = "") -> dict:
     s = next((s for s in _meta() if s["id"] == sid), None)
@@ -260,7 +280,8 @@ def run_by_id(sid: str, title: str = "", url: str = "", kind: str = "", domain: 
     if not s.get("enabled", True): raise ValueError("scraper is disabled")
     path = _scraper_path(s)
     if not path: raise ValueError("scraper file entry in meta.json is invalid")
-    payload = {"title": title or "", "url": url or "", "kind": kind or s.get("kind") or "", "domain": domain or ""}
+    payload = {"title": title or "", "url": url or "",
+               "kind": _default_kind(kind, s.get("kind")), "domain": domain or ""}
     if s["type"] == "python": return run_python(path, payload)
     return run_yaml(path, title=title, url=url)
 

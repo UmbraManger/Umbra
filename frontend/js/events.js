@@ -456,7 +456,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
  else if(act==='fetch-gallery'){
   const v=state.view;if(v.name!=='detail'||v.kind!=='scene')return;
   const item=byId('scene',v.id);if(!item)return;
-  const scrapers=settings.scrapers.filter(s=>s.kind==='scene'&&s.enabled);
+  const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,'scene')&&s.enabled);
   if(!scrapers.length){toast('No Scene Scraper Enabled','alert-triangle');return}
   const glCount=(settings.gallery&&settings.gallery.count)||12;
   let chosen=null;

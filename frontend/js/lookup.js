@@ -102,7 +102,7 @@ function openFetchModal(kind,ctx){
  if(!ctx.title&&ctx.current&&ctx.current.name)ctx.title=ctx.current.name;
  const ai=settings.ai;
  const sites=(settings.sources[kind]||[]);
- const scrapers=settings.scrapers.filter(s=>s.kind===kind&&s.enabled);
+ const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,kind)&&s.enabled);
  let chosen=null;
  const s0={title:'Get Information - Choose Source',html:()=>`
   <div class="cmsg" style="margin-bottom:14px">Pick A Source To Look Up <b>"${esc(ctx.title)}"</b> - Or Paste A Direct URL.${Sync.on?' <span class="dim">(Lookups Run On The Backend)</span>':''}</div>
