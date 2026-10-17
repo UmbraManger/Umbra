@@ -147,6 +147,136 @@ class BrazzersActorTests(IsolatedCase):
         self.assertEqual(b._actor_to_perf(a)['height'], 157)
 
 
+class P1SceneEnvelopeTests(IsolatedCase):
+    """P1 detail endpoints wrap the release in {'meta':…, 'result':{…}} —
+    get_scene must unwrap (RealityKings returned notFound for valid scenes)."""
+    RELEASE = {'title': 'Public Pickup', 'dateReleased': '2026-10-17T12:00:00+00:00',
+               'description': 'd', 'id': 123, 'duration': 1830,
+               'actors': [{'name': 'Raissa Bellini'}], 'tags': [], 'studio': 'RK'}
+
+    def _scrape(self, data, cap):
+        import p1api
+        with mock.patch.object(p1api, "api_get", return_value=data) as g:
+            out = p1api.get_scene(123, "https://www.realitykings.com", "Reality Kings")
+        self.assertEqual(g.call_args.args[0], cap)
+        return out
+
+    def test_wrapped_release_is_unpacked(self):
+        out = self._scrape({'meta': {'count': 1}, 'result': dict(self.RELEASE)},
+                           '/v2/releases/123')
+        self.assertEqual(out['title'], 'Public Pickup')
+        self.assertEqual(out['date'], '2026-10-17')
+        self.assertEqual(out['duration_min'], 30)
+        self.assertEqual(out['performers'][0]['name'], 'Raissa Bellini')
+        self.assertNotIn('notFound', out)
+
+    def test_bare_release_still_works(self):
+        out = self._scrape(dict(self.RELEASE), '/v2/releases/123')
+        self.assertEqual(out['title'], 'Public Pickup')
+
+
+class PrivateScraperTests(IsolatedCase):
+    """private.com.py — scene detail/search + performer profile, all HTML."""
+    SCENE = ('<h1>Matty Mila Perez, how I became a pornstar</h1>'
+             '<meta property="og:description" content="She explains how.">'
+             '<meta property="og:image" content="https://p.test/c.jpg">'
+             '<meta itemprop="duration" content="PT31M54S">'
+             '<meta itemprop="uploadDate" content="2026-09-28T00:00:00+01:00">'
+             '<ul class="scene-models-list-tags-sites">'
+             '<li class="tag-models"><a href="/pornstar/8112-matty">Matty Mila Perez</a></li>'
+             '<li class="tag-tags"><a href="/category/4k/">4K</a></li>'
+             '<li class="tag-tags"><a href="/category/anal/">Anal</a></li></ul>'
+             '<span class="title-site">Private Stars</span>')
+    PERF = ('<h1>Matty Mila Perez</h1>'
+            '<meta property="og:image" content="https://p.test/profile.jpg">'
+            '<ul class="model-facts"><li><em>Measurements:</em>34-23-36</li>'
+            '<li><em>Height:</em>157cm - 5ft 2in</li><li><em>Weight:</em>-</li>'
+            '<li><em>Nationality:</em>Latvian</li><li><em>Hair Color:</em>Black</li>'
+            '<li><em>Eye color:</em>Tattooed eyeliner</li></ul>')
+    LIST = ('<a href="/scene/x/1">4K</a>'
+            '<a href="/scene/how-i-became/27221">Matty Mila Perez, how I became a pornstar</a>'
+            '<a href="/scene/other/2">Matty Mila Perez Fucks Her Boss</a>'
+            '<a href="/scene/y/3">Your browser does not support the video tag.</a>')
+
+    def _load(self):
+        import sys, uuid, importlib.util
+        p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "scrapers", "private.com.py")
+        spec = importlib.util.spec_from_file_location("umbra_scr_" + uuid.uuid4().hex, p)
+        pv = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pv)
+
+        class R:
+            def __init__(self, text): self.text = text
+            def raise_for_status(self): pass
+        return pv, R
+
+    def test_scene_page_maps_to_umbra_scene(self):
+        pv, R = self._load()
+        with mock.patch.object(pv.requests, "get", return_value=R(self.SCENE)) as g:
+            out = pv.scrape(url="https://www.private.com/scene/m/27221")
+        self.assertEqual(out['title'], 'Matty Mila Perez, how I became a pornstar')
+        self.assertEqual(out['date'], '2026-09-28')
+        self.assertEqual(out['duration_min'], 32)
+        self.assertEqual(out['code'], '27221')
+        self.assertEqual(out['performers'], [
+            {'name': 'Matty Mila Perez', 'url': 'https://www.private.com/pornstar/8112-matty'}])
+        self.assertEqual(out['tags'], ['4K', 'Anal'])
+        self.assertEqual(out['studio'], 'Private Stars')
+        self.assertEqual(out['cover_a'], 'https://p.test/c.jpg')
+
+    def test_performer_profile_maps_to_umbra_performer(self):
+        pv, R = self._load()
+        with mock.patch.object(pv.requests, "get", return_value=R(self.PERF)):
+            out = pv.scrape(url="https://www.private.com/pornstar/8112-matty")
+        self.assertEqual(out['name'], 'Matty Mila Perez')
+        self.assertEqual(out['height'], 157)
+        self.assertEqual(out['measurements'], '34-23-36')
+        self.assertEqual(out['hair'], 'Black')
+        self.assertEqual(out['eyes'], 'Tattooed eyeliner')
+        self.assertNotIn('weight', out)               # '-' filtered
+        self.assertEqual(out['photo'], 'https://p.test/profile.jpg')
+
+    def test_title_search_picks_best_card_detail(self):
+        import algolia
+        pv, R = self._load()
+        with mock.patch.object(algolia, "title_match_score",
+                               side_effect=lambda q, t: 100 if "how i became" in (t or "").lower() else 10) as sc:  # noqa: E731
+            pages = {'search': R(self.LIST), 'detail': R(self.SCENE)}
+            def fake_get(url, **kw):
+                return pages['detail'] if '/scene/how-i-became/' in url else pages['search']
+            with mock.patch.object(pv.requests, "get", side_effect=fake_get):
+                out = pv.scrape(title="Matty Mila Perez, how I became a pornstar")
+        self.assertEqual(sc.call_count, 2)
+        self.assertEqual(out['title'], 'Matty Mila Perez, how I became a pornstar')
+        self.assertEqual(out['duration_min'], 32)
+
+    def test_site_route_prefers_the_kind_matching_scraper(self):
+        """Two scrapers match x.com — a scene-only HTML mapping added first and a
+        performer python scraper added later; performer fetch must take the later.
+        (regression: first-host-match won, so /pornstar/ got the scene yaml)"""
+        fn = "perf_fit.py"
+        with open(os.path.join(db.SCRAPER_DIR, fn), "wb") as f:
+            f.write(b'def scrape(**kw):\n    return {"name": "perf-fit"}\n')
+        scout = "fit_scene.yml"
+        with open(os.path.join(db.SCRAPER_DIR, scout), "wb") as f:
+            f.write(YAML)
+        scrapers._save_meta([
+            {"id": "fit-1", "name": "x.com", "file": scout, "type": "yaml",
+             "kind": ["scene"], "enabled": True, "structure": None},
+            {"id": "fit-2", "name": "x.com", "file": fn, "type": "python",
+             "kind": ["performer"], "enabled": True, "structure": None}])
+        with mock.patch.object(db, "get_settings", return_value={"pyScrapers": True}):
+            out = scrapers.run_for_site("https://x.com/pornstar/1",
+                                        url="https://x.com/pornstar/1", kind="performer")
+            self.assertEqual(out, {"name": "perf-fit"})
+            with mock.patch.object(scrapers.requests, "get", return_value=FakeResponse()), \
+                    _stub_public_dns():
+                out = scrapers.run_for_site("https://x.com/pornstar/1",
+                                            url="https://x.com/pornstar/1")  # no kind → first
+        self.assertEqual(out, {"title": "Alpha", "year": 1999, "poster_f": "http://x.test/p.jpg"})
+
+
 class KindDetectionTests(IsolatedCase):
     SRC_PERFORMER = "def performer_from_url(url):\n    ...\n\ndef performer_search(n):\n    ...\n\ndef scrape(name=\"\"):\n    ...\n"
     SRC_MOVIE = "def _is_movie_url(href):\n    ...\n\ndef _get_movie_by_url(url):\n    ...\n\ndef scrape(**kw):\n    ...\n"

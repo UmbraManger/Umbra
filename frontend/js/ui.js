@@ -376,7 +376,7 @@ function prefillStructureRows(kinds,det){
     else if(ldKey('duration')&&det.ldIsVideo){sel=ld('duration').sel;attr='ld:duration';hint='(JSON-LD)'}
     else if(det.hasDuration){sel='[class*="duration"]';attr='text'}
    }
-   if(key==='catNames'&&det.hasTag){sel='a[class*="tag"],a[class*="category"],a[class*="genre"]';attr='text'}
+   if(key==='catNames'&&det.hasTag){sel='a[class*="tag-tags"],a[href*="/tag/"],a[href*="/category/"],a[href*="/categories/"],a[href*="/genre/"],a[class*="category"],a[class*="genre"]';attr='text'}
    if(key==='performers'&&!sel&&det.hasCast){sel='[data-track="PORNSTAR_NAME"],a[class*="model"],a[class*="performer"],a[class*="cast"]';attr='text';hint='(comma list in the yaml)'}
    rows.push({key,label,transform,selector:sel,attr,hint});
   }

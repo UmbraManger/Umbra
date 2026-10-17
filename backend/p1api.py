@@ -221,6 +221,9 @@ def get_scene(scene_id, site_url="https://www.brazzers.com", default_studio="Unk
         data = api_get(f'/v2/releases/{scene_id}', site_url=site_url)
     except Exception as e:
         return {'error': str(e), 'notFound': True}
+    # Detail endpoints wrap the release in {"meta": ..., "result": {...}}
+    if isinstance(data, dict) and isinstance(data.get('result'), dict):
+        data = data['result']
     if isinstance(data, dict) and data.get('title'):
         return release_to_scene(data, default_studio)
     return {'notFound': True, 'scene_id': scene_id}

@@ -380,12 +380,18 @@ def _host_matches(candidate: str, host: str) -> bool:
 def run_for_site(src, title: str = "", url: str = "", kind: str = "") -> dict:
     raw = url or (src.get("url") if isinstance(src, dict) else str(src))
     host = (urlparse(raw).hostname or "").replace("www.", "")
-    # Check scraper meta (name/structure)
-    for s in _meta():
-        if not s.get("enabled", True): continue
-        if _host_matches(s.get("name"), host) or \
-                _host_matches((s.get("structure") or {}).get("source"), host):
-            return run_by_id(s["id"], title=title, url=url, kind=kind, domain=host)
+    # Check scraper meta (name/structure). When a kind is requested, a scraper
+    # classified for that kind beats the first host match (a scene-only HTML
+    # mapping shouldn't serve a /pornstar/ URL just because it was added first).
+    matched = [s for s in _meta()
+               if s.get("enabled", True) and (_host_matches(s.get("name"), host) or
+                   _host_matches((s.get("structure") or {}).get("source"), host))]
+    if matched:
+        fit = next((s for s in matched
+                    if kind and kind in (s.get("kind") if isinstance(s.get("kind"), list) else [s.get("kind")])),
+                   None)
+        s = fit or matched[0]
+        return run_by_id(s["id"], title=title, url=url, kind=kind, domain=host)
     # Check assigned scraper sites from settings
     sites = db.get_scraper_sites()
     for kind_sites in sites.values():
