@@ -26,7 +26,7 @@ db.connect()
 # (schema incl. positions + column migrations lives in db._migrate)
 log = logging.getLogger("umbra")
 
-app = FastAPI(title="Umbra", version="1.0")
+app = FastAPI(title="Umbra", version="1.1")
 
 # ---- security: per-run token + Host/Origin enforcement ----
 # Everything under /api/ requires the per-run token (header X-Umbra-Token or
@@ -151,7 +151,7 @@ def _to_db(kind, data, create=False):
     return rec
 
 @app.get("/api/ping")
-def ping(): return {"ok": True, "app": "Umbra", "version": "1.0"}
+def ping(): return {"ok": True, "app": "Umbra", "version": "1.1"}
 
 @app.get("/api/library")
 def library():
@@ -647,10 +647,6 @@ def scraper_toggle(sid: str):
 @app.delete("/api/scrapers/{sid}")
 def scraper_delete(sid: str):
     scraper_engine.remove(sid); return {"ok": True}
-
-@app.post("/api/scrapers/{sid}/structure")
-def scraper_structure(sid: str, body: dict = Body(...)):
-    scraper_engine.set_structure(sid, body); return {"ok": True}
 
 @app.get("/api/scrapers/sites")
 def list_scraper_sites():

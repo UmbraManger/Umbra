@@ -2,7 +2,7 @@
 /* ===== UTILS ===== */
 // Bumping the release: mirror the version in index.html's title bar,
 // backend/server.py (FastAPI title + /api/ping) and backend/pyproject.toml.
-const APP_VERSION='1.0';
+const APP_VERSION='1.1';
 const $=(s,c=document)=>c.querySelector(s);
 const $$=(s,c=document)=>[...c.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));

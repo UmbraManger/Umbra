@@ -277,6 +277,81 @@ class PrivateScraperTests(IsolatedCase):
         self.assertEqual(out, {"title": "Alpha", "year": 1999, "poster_f": "http://x.test/p.jpg"})
 
 
+class NaughtyAmericaTests(IsolatedCase):
+    """NaughtyAmerica.py — JSON-LD VideoObject scene + ld Person profile."""
+    SCENE = ('<script type="application/ld+json">{"@context":"https://schema.org",'
+             '"@type":"VideoObject","name":"Gracie Glam & Mikey Butders in Naughty Bookworms",'
+             '"description":"Gracie Glam fails her class...",'
+             '"thumbnailUrl":"https://img.test/800x534.jpg",'
+             '"uploadDate":"2020-06-07T07:00:00+00:00",'
+             '"actor":[{"@type":"Person","name":"Mikey Butders","gender":"Male"},'
+             '{"@type":"Person","name":"Gracie Glam","gender":"Female"}]}</script>'
+             '<div class="duration"><span>|</span> 30 min </div>'
+             '<h2><span class="scene-title small-text">Site:</span>'
+             '<a class="site-title grey-text link" href="/site/naughty-bookworms">Naughty Bookworms</a></h2>'
+             '<a href="https://www.naughtyamerica.com/fantasy/ass-smacking-porn-videos">Ass Smacking</a>'
+             '<a href="https://www.naughtyamerica.com/fantasy/remastered-porn-videos">REMASTERED HD</a>')
+    PERF = ('<script type="application/ld+json">{"@context":"https://schema.org",'
+            '"@type":"Person","name":"Angela White",'
+            '"url":"https://www.naughtyamerica.com/pornstar/angela-white",'
+            '"image":"https://img.test/profile.jpg",'
+            '"description":"The horny porn star from Sydney.",'
+            '"gender":"Female"}</script>')
+
+    def _load(self):
+        import uuid, importlib.util
+        from bs4 import BeautifulSoup as BS
+        p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "scrapers", "NaughtyAmerica.py")
+        spec = importlib.util.spec_from_file_location("umbra_na_" + uuid.uuid4().hex, p)
+        na = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(na)
+        na._soup = BS
+        return na
+
+    def _feed(self, na, html):
+        na._get = lambda url, retries=2: na._soup(html, 'html.parser')
+
+    def test_scene_page_maps(self):
+        na = self._load()
+        self._feed(na, self.SCENE)
+        out = na.scrape(url="https://www.naughtyamerica.com/scene/x-26021")
+        self.assertEqual(out['title'], 'Gracie Glam & Mikey Butders in Naughty Bookworms')
+        self.assertEqual(out['date'], '2020-06-07')
+        self.assertEqual(out['duration_min'], 30)
+        self.assertEqual(out['code'], '26021')
+        self.assertEqual(out['studio'], 'Naughty Bookworms')
+        self.assertEqual([p['name'] for p in out['performers']], ['Mikey Butders', 'Gracie Glam'])
+        self.assertEqual(out['performers'][1]['gender'], 'f')
+        self.assertEqual(out['tags'], ['Ass Smacking'])       # REMASTERED HD dropped
+        self.assertEqual(out['cover_a'], 'https://img.test/800x534.jpg')
+
+    def test_performer_profile_maps(self):
+        na = self._load()
+        self._feed(na, self.PERF)
+        out = na.scrape(url="https://www.naughtyamerica.com/pornstar/angela-white")
+        self.assertEqual(out['name'], 'Angela White')
+        self.assertEqual(out['gender'], 'f')
+        self.assertEqual(out['photo'], 'https://img.test/profile.jpg')
+        self.assertEqual(out['bio'], 'The horny porn star from Sydney.')
+
+    def test_name_lookup_guesses_the_slug(self):
+        na = self._load()
+        seen = {}
+        def fake_get(url, retries=2):
+            seen['url'] = url
+            return na._soup(self.PERF, 'html.parser')
+        na._get = fake_get
+        out = na.scrape(title="Angela  White", kind="performer")
+        self.assertEqual(seen['url'], 'https://www.naughtyamerica.com/pornstar/angela-white')
+        self.assertEqual(out['name'], 'Angela White')
+
+    def test_scene_title_search_is_honest(self):
+        na = self._load()
+        out = na.scrape(title="whatever")
+        self.assertIn('notFound', out)
+
+
 class KindDetectionTests(IsolatedCase):
     SRC_PERFORMER = "def performer_from_url(url):\n    ...\n\ndef performer_search(n):\n    ...\n\ndef scrape(name=\"\"):\n    ...\n"
     SRC_MOVIE = "def _is_movie_url(href):\n    ...\n\ndef _get_movie_by_url(url):\n    ...\n\ndef scrape(**kw):\n    ...\n"

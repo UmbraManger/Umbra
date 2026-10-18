@@ -108,7 +108,7 @@ def get_best_image(images_dict):
     return None
 
 
-def release_to_scene(release, default_studio="Unknown"):
+def release_to_scene(release, default_studio="Unknown", site_url="https://www.brazzers.com"):
     """Convert a P1 API release object to Umbra scene dict."""
     scene = {'kind': 'scene'}
 
@@ -139,8 +139,8 @@ def release_to_scene(release, default_studio="Unknown"):
             p['name'] = actor['name'].strip()
         if actor.get('gender'):
             p['gender'] = actor['gender'].strip()
-        if actor.get('customUrl'):
-            p['url'] = f"https://www.brazzers.com/pornstar/{actor['customUrl']}"
+        if actor.get('id'):
+            p['url'] = f"{site_url}/pornstar/{actor['customUrl'] or actor['id']}"
         if actor.get('id'):
             p['id'] = str(actor['id'])
         if p.get('name'):
@@ -209,7 +209,7 @@ def search(query, site_url="https://www.brazzers.com", default_studio="Unknown",
 
     results = []
     for rel in releases:
-        scene = release_to_scene(rel, default_studio)
+        scene = release_to_scene(rel, default_studio, site_url)
         if scene.get('title'):
             results.append(scene)
     return results[:limit] if results else {'notFound': True}
@@ -225,7 +225,7 @@ def get_scene(scene_id, site_url="https://www.brazzers.com", default_studio="Unk
     if isinstance(data, dict) and isinstance(data.get('result'), dict):
         data = data['result']
     if isinstance(data, dict) and data.get('title'):
-        return release_to_scene(data, default_studio)
+        return release_to_scene(data, default_studio, site_url)
     return {'notFound': True, 'scene_id': scene_id}
 
 
@@ -238,3 +238,75 @@ def scene_by_url(url, site_url="https://www.brazzers.com", default_studio="Unkno
     if m:
         return get_scene(m.group(1), site_url, default_studio)
     return {'error': 'Could not extract scene ID from URL', 'notFound': True}
+
+
+# ---- shared performers (v1/actors works for every P1 site) ----
+GENDER = {'female': 'f', 'male': 'm', 'transgender': 't', 'trans': 't'}
+
+
+def actor_to_perf(actor, site_url="https://www.brazzers.com", url=""):
+    """Project1Service /v1/actors object → Umbra performer dict."""
+    perf = {'kind': 'performer', 'name': (actor.get('name') or '').strip()}
+    g = GENDER.get((actor.get('gender') or '').strip().lower())
+    if g:
+        perf['gender'] = g
+    if actor.get('bio'):
+        perf['bio'] = actor['bio']
+    if actor.get('birthday'):
+        perf['birth'] = parse_date(actor['birthday'])
+    if actor.get('birthPlace'):
+        perf['nationality'] = actor['birthPlace']
+    if actor.get('height'):
+        # API ships inches for US sites (62 = 5'2") — cm is what the form keeps
+        h = actor['height'] if isinstance(actor['height'], (int, float)) else int(str(actor['height'])[:3])
+        perf['height'] = int(round(h * 2.54)) if h <= 100 else int(h)
+    if actor.get('weight'):
+        perf['weight'] = int(actor['weight'])
+    if actor.get('measurements'):
+        perf['measurements'] = actor['measurements']
+    aliases = [a.strip() for a in (actor.get('aliases') or []) if a and a.strip()]
+    if aliases:
+        perf['aliases'] = ', '.join(aliases)
+    img = _actor_img(actor)
+    if img:
+        perf['photo'] = img
+        perf['image'] = img
+    if url:
+        perf['url'] = url
+    return perf
+
+
+def _actor_img(actor):
+    """Best profile photo: profile images come sized lg > md > sm > xs."""
+    prof = ((actor.get('images') or {}).get('profile') or {})
+    for v in prof.values():
+        if isinstance(v, dict):
+            for size in ('lg', 'md', 'sm', 'xs'):
+                if isinstance(v.get(size), dict) and v[size].get('url'):
+                    return v[size]['url']
+    return get_best_image(actor.get('images') or {})
+
+
+def actor_get(actor_id, site_url):
+    """Actor detail by numeric id: the site's /pornstar/{id}/{slug} URL."""
+    res = api_get(f'/v1/actors/{actor_id}', None, site_url=site_url).get('result')
+    if isinstance(res, list) and res:
+        res = res[0]
+    return res if isinstance(res, dict) and res.get('name') else {}
+
+
+def actor_url(actor, site_url):
+    if actor.get('id') and actor.get('customUrl'):
+        return f"{site_url}/pornstar/{actor['id']}/{actor['customUrl']}"
+    if actor.get('id'):
+        return f"{site_url}/pornstar/{actor['id']}"
+    return ""
+
+
+def actor_search(query, site_url):
+    """Search the P1 actors endpoint; first hit with a name wins."""
+    res = api_get('/v1/actors', {'search': query, 'limit': 10}, site_url=site_url).get('result') or []
+    for actor in res:
+        if isinstance(actor, dict) and actor.get('name'):
+            return actor
+    return {}

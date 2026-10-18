@@ -101,7 +101,7 @@ def add(filename: str, content: bytes, kind) -> tuple:
     meta = _meta()
     meta.append({"id": fid, "name": filename, "file": fname,
                  "type": "python" if ext == "py" else "yaml",
-                 "kind": kinds or ["movie"], "enabled": True, "structure": None})
+                 "kind": kinds or ["movie"], "enabled": True})
     _save_meta(meta)
     return fid, kinds
 
@@ -122,13 +122,6 @@ def toggle(sid):
     meta = _meta()
     for s in meta:
         if s["id"] == sid: s["enabled"] = not s.get("enabled", True)
-    _save_meta(meta)
-
-@_locked
-def set_structure(sid, structure: dict):
-    meta = _meta()
-    for s in meta:
-        if s["id"] == sid: s["structure"] = structure
     _save_meta(meta)
 
 # ---- kind auto-detection -------------------------------------------------
@@ -328,7 +321,7 @@ def install_bundled() -> None:
         with open(dst, "wb") as f:
             f.write(content)
         meta.append({"id": sid, "name": fn[:-3], "file": fn, "type": "python",
-                     "kind": kinds, "enabled": False, "structure": None})
+                     "kind": kinds, "enabled": False})
         known.add(fn)
         changed = True
     if changed:
@@ -380,12 +373,11 @@ def _host_matches(candidate: str, host: str) -> bool:
 def run_for_site(src, title: str = "", url: str = "", kind: str = "") -> dict:
     raw = url or (src.get("url") if isinstance(src, dict) else str(src))
     host = (urlparse(raw).hostname or "").replace("www.", "")
-    # Check scraper meta (name/structure). When a kind is requested, a scraper
-    # classified for that kind beats the first host match (a scene-only HTML
-    # mapping shouldn't serve a /pornstar/ URL just because it was added first).
+    # Check scraper meta (name). When a kind is requested, a scraper classified
+    # for that kind beats the first host match (e.g. a scene-only scraper must
+    # not serve a /pornstar/ URL just because it was added first).
     matched = [s for s in _meta()
-               if s.get("enabled", True) and (_host_matches(s.get("name"), host) or
-                   _host_matches((s.get("structure") or {}).get("source"), host))]
+               if s.get("enabled", True) and _host_matches(s.get("name"), host)]
     if matched:
         fit = next((s for s in matched
                     if kind and kind in (s.get("kind") if isinstance(s.get("kind"), list) else [s.get("kind")])),

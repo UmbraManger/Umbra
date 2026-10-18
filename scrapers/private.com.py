@@ -12,6 +12,46 @@ HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
            'Accept-Language': 'en-US,en;q=0.9'}
 
 
+def _soup(url):
+    r = requests.get(url, headers=HEADERS, timeout=(15, 30))
+    r.raise_for_status()
+    return BeautifulSoup(r.text, 'html.parser')
+
+
+def _search_performer(query):
+    """private.com has no scrapable model search — find the name through its
+    scene search (server-rendered search.php) and pull the profile link from
+    the scene page's cast list (li.tag-models → name + /pornstar/ URL)."""
+    qtok = set(t for t in re.findall(r'[a-z0-9]+', (query or '').lower()) if t)
+    if not qtok:
+        return {'notFound': True}
+    try:
+        scenes = _search_scenes(query)
+    except Exception:
+        scenes = []
+    candidates = {}
+    for s in (scenes if isinstance(scenes, list) else [])[:3]:
+        try:
+            soup = _soup(s['url'])
+        except Exception:
+            continue
+        for a in soup.select('li.tag-models a'):
+            name = a.get_text(' ', strip=True)
+            if name and name not in candidates:
+                candidates[name] = urljoin(SITE_URL, a.get('href', ''))
+    match, match_len = None, 0
+    for name in candidates:
+        ntok = set(t for t in re.findall(r'[a-z0-9]+', name.lower()) if t)
+        common = qtok & ntok
+        # ≥ half of the profile's name tokens present in the query, and an
+        # actual token overlap — filters unrelated cast names of other scenes
+        if common and len(common) >= max(1, len(ntok) // 2) and len(ntok) > match_len:
+            match, match_len = candidates[name], len(ntok)
+    if not match:
+        return {'notFound': True, 'error': f'no performer {query!r} found via private.com scene search'}
+    return _performer(match)
+
+
 def _min(soup):
     meta = soup.select_one('[itemprop="duration"]') or soup.select_one('meta[property="og:duration"]')
     raw = ((meta.get('content') or '') if meta else '').lower().strip()
@@ -146,6 +186,8 @@ def scrape(title="", url="", html="", kind="", **kwargs):
             return {'notFound': True, 'error': str(e)}
     if title:
         try:
+            if kind == 'performer':
+                return _search_performer(title)
             results = _search_scenes(title)
         except Exception as e:
             return {'notFound': True, 'error': str(e)}

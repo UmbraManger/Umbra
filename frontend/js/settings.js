@@ -126,7 +126,6 @@ function renderSettings(){
 <div class="ssec"><div class="shead"><i data-lucide="file-code"></i><h2>External Scrapers</h2><span class="mono">Python · YAML</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
      <button class="btn primary" data-action="scr-add"><i data-lucide="upload"></i>Add Scraper File</button>
-     <button class="btn" data-action="scr-html"><i data-lucide="code"></i>Import HTML Structure</button>
      <button class="btn ${settings.pyScrapers?'primary':''}" data-action="py-toggle" title="Python scrapers execute as local code on this machine"><i data-lucide="shield-check"></i>Python Scrapers: ${settings.pyScrapers?'Allowed':'Blocked'}</button>
     </div>
     <div style="margin-top:14px">${scraperRows||'<div class="dim" style="font-size:12.5px;margin-bottom:4px">No External Scrapers Installed Yet.</div>'}</div>
