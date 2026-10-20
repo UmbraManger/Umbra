@@ -48,7 +48,7 @@ test('the native title bar is a drag region with min/max/close', () => {
   // app name + version stamp in the bar
   const name = tb.querySelector('.tb-name');
   assert.ok(name && /Umbra/.test(name.textContent), 'the bar names the app');
-  assert.ok(/1\.1/.test(name.textContent), 'the bar shows the app version');
+  assert.ok(/1\.2/.test(name.textContent), 'the bar shows the app version');
   for (const id of ['tb-min', 'tb-max', 'tb-close']) {
     assert.ok(w.document.getElementById(id), id + ' button exists');
   }

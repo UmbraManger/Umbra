@@ -6,7 +6,7 @@
 
 Python + FastAPI + SQLite behind a pywebview window; a zero-framework JavaScript frontend; your library lives encrypted in a `data/` folder next to the exe.
 
-`Version 1.1` · `License: GPL-3.0` · `Windows 10/11`
+`Version 1.2` · `License: GPL-3.0` · `Windows 10/11`
 
 ---
 

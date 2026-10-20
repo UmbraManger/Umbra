@@ -1,8 +1,14 @@
 """Scan directories → candidate files → import as movies/scenes with metadata + images."""
-import os, json, subprocess
+import os, json, subprocess, threading
 import db
 
 RESUME = os.path.join(db.DATA_DIR, "scanstate.json")
+
+# The state jar is read and rebuilt O(1) via an in-process cache guarded by a
+# lock: a scan heals thousands of markers while imports mark new ones, so the
+# old open-file-per-call version raced and could corrupt the jar.
+_lock = threading.Lock()
+_cache = {"stamp": None, "paths": set(), "list": []}
 
 # Windows opens a console window for every child process; ffprobe is spawned
 # once per file while scanning, so without this each import flashes N black
@@ -12,15 +18,37 @@ _NO_WIN = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 VIDEO_EXT = {".mp4", ".mkv", ".avi", ".webm", ".mov", ".m4v", ".wmv", ".mpg", ".mpeg"}
 IMG_EXT   = (".jpg", ".jpeg", ".png", ".webp")
 
-def _state() -> dict:
-    try: return json.load(open(RESUME, encoding="utf-8"))
-    except Exception: return {"done": []}
+def _stamp():
+    try:
+        st = os.stat(RESUME)
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
 
-def _save_state(s: dict) -> None:
-    json.dump(s, open(RESUME, "w", encoding="utf-8"))
+def _cache_fill() -> None:
+    try:
+        with open(RESUME, encoding="utf-8") as f:
+            lst = [x for x in json.load(f).get("done", []) if isinstance(x, str)]
+    except Exception:
+        lst = []
+    _cache["list"] = lst
+    _cache["paths"] = {_norm_path(x) for x in lst}
+    _cache["stamp"] = _stamp()
+
+def _flush() -> None:
+    # Atomic replace: a plain dump killed mid-write leaves truncated JSON and
+    # the next read would silently drop EVERY marker.
+    tmp = RESUME + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"done": _cache["list"]}, f)
+        os.replace(tmp, RESUME)
+    except OSError:
+        return
+    _cache["stamp"] = _stamp()
 
 def walk(dirs: list) -> list[dict]:
-    found = []
+    found, seen = [], set()
     for d in dirs:
         if not os.path.isdir(d): continue
         for root, _, files in os.walk(d):
@@ -30,6 +58,10 @@ def walk(dirs: list) -> list[dict]:
                     # yield mixed separators, and the exact-string compare in
                     # is_imported() would then miss the already-imported copy.
                     p = os.path.normpath(os.path.join(root, f))
+                    norm = _norm_path(p)
+                    if norm in seen:      # overlapping configured dirs → dupes
+                        continue
+                    seen.add(norm)
                     try: size = os.path.getsize(p)
                     except OSError: size = 0
                     found.append({"path": p, "name": f, "size": size, "dir": root})
@@ -107,25 +139,28 @@ def _norm_path(path: str) -> str:
 
 
 def is_imported(path: str) -> bool:
-    p = _norm_path(path)
-    return p in {_norm_path(x) for x in _state().get("done", [])}
+    with _lock:
+        if _stamp() != _cache["stamp"]: _cache_fill()
+        return _norm_path(path) in _cache["paths"]
 
 def mark_done(path: str) -> None:
-    s = _state()
-    done = s.setdefault("done", [])
     p = _norm_path(path)
-    if not any(_norm_path(x) == p for x in done):
-        done.append(path)              # stored as given (stable file format)
-        _save_state(s)
+    with _lock:
+        if _stamp() != _cache["stamp"]: _cache_fill()
+        if p in _cache["paths"]: return
+        _cache["list"].append(path)
+        _cache["paths"].add(p)
+        _flush()
 
 def remove_done(path: str) -> None:
-    s = _state()
-    done = s.get("done", [])
     p = _norm_path(path)
-    kept = [x for x in done if _norm_path(x) != p]
-    if kept != done:
-        s["done"] = kept
-        _save_state(s)
+    with _lock:
+        if _stamp() != _cache["stamp"]: _cache_fill()
+        kept = [x for x in _cache["list"] if _norm_path(x) != p]
+        if len(kept) == len(_cache["list"]): return
+        _cache["list"] = kept
+        _cache["paths"] = {_norm_path(x) for x in kept}
+        _flush()
 
 def _img_ref(path: str) -> str:
     from crypto import store_image

@@ -32,6 +32,14 @@ class WalkTests(IsolatedCase):
     def test_walk_with_no_dirs_is_empty(self):
         self.assertEqual(scanner.walk([]), [])
 
+    def test_overlapping_configured_dirs_scan_each_file_once(self):
+        """Regression: C:\lib and C:\lib\sub both configured used to list every
+        sub file twice in the Import From Scan dialog."""
+        v = self.tmpfile("lib/sub/film.mp4")
+        root = os.path.dirname(os.path.dirname(v))
+        found = [f["path"] for f in scanner.walk([root, os.path.dirname(v)])]
+        self.assertEqual(found, [v])
+
 
 class KindGuessTests(IsolatedCase):
     def test_duration_is_the_strongest_signal(self):
