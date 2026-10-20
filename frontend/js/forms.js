@@ -462,6 +462,22 @@ function bulkRunFetch(tab,itemsIn,op,scraperId){
      const it=items[i],row=$(`#bfr-${i}`);if(!row)break;
      const st=row.querySelector('[data-st]');st.textContent='Searching...';
      let done=false,reason='';
+     if(op==='info'&&!scraperId&&kind!=='performer'){
+      // Ask a search engine which official site owns this title first — the
+      // hit on a domain an installed scraper covers is routed to that scraper.
+      st.textContent='Searching Web...';
+      try{
+       const rw=await fetch('/api/scrape',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,mode:'web',title:nameOf(it)})});
+       if(rw.ok){
+        const raww=await rw.json();
+        if(!(raww&&(raww.notFound||raww.error))){
+         const mw=normResult(kind,raww);
+         if(mw){try{applyFetchTo(kind,it,mw,true)}catch(e){reason='Apply Failed'}done=true}
+        }
+       }
+      }catch(e){}
+      if(!done&&!order.length)reason='Web Search Missed';
+     }
      for(const s of order){
       try{
        const r=await fetch('/api/scrape',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,mode:'scraper',scraper_id:s.id,title:nameOf(it),gallery_count:0})});

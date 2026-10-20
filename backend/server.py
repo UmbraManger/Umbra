@@ -770,6 +770,60 @@ def _process_images(result: dict) -> dict:
     return result
 
 
+# ---- web-search routing (bulk mode="web") ----
+# Bulk fetching knows only the title, so query a search engine and let the
+# result URLs point at the *official* site: any hit on a domain an installed
+# scraper covers is routed straight to that scraper with the full page URL.
+_WEB_SKIP = ("bing.", "duckduckgo.", "google.", "startpage.", "yandex.",
+             "search.", "ecosia.")
+
+def _engine_urls(host: str, body: str) -> list:
+    if "bing." in host:
+        return re.findall(r"<link>(https?://[^<]+)</link>", body)
+    # DuckDuckGo html wraps every hit in an outbound redirect: /l/?uddg=<url>
+    from urllib.parse import unquote
+    return [unquote(m.group(1)) for m in re.finditer(r"uddg=([^&\"']+)", body)]
+
+def search_web(query: str) -> list:
+    from urllib.parse import quote_plus
+    q = quote_plus('"%s"' % query.strip())
+    engines = [f"https://www.bing.com/search?q={q}&format=rss",
+               f"https://html.duckduckgo.com/html/?q={q}"]
+    urls, seen = [], set()
+    for eng in engines:
+        try:
+            r = safe_get(requests, eng, timeout=15,
+                         headers={"User-Agent": "Mozilla/5.0 (Umbra)"})
+            r.raise_for_status()
+        except Exception:
+            continue
+        for u in _engine_urls(("bing." if "bing." in eng else "ddg"), r.text):
+            if not u.startswith("http"): continue
+            urls.append(u)
+    out = []
+    for u in urls:
+        h = (urlparse(u).hostname or "").lower()
+        if not h or any(s in h for s in _WEB_SKIP): continue
+        if h not in seen:
+            seen.add(h); out.append(u)
+    return out
+
+def web_lookup(kind: str, title: str) -> dict:
+    cands = search_web(title)
+    last = None
+    for u in cands[:8]:
+        try:
+            res = scraper_engine.run_for_site(u, title=title, url=u, kind=kind)
+        except Exception as e:
+            last = e; continue
+        if isinstance(res, dict) and not res.get("notFound") and not res.get("error"):
+            host = urlparse(u).hostname or ""
+            host = host[4:] if host.startswith("www.") else host
+            if isinstance(res, dict): res["via"] = host
+            return res
+    raise HTTPException(404, "web search found nothing on an installed site"
+                        + (f" ({last})" if last else ""))
+
 @app.post("/api/scrape")
 def run_scrape(body: dict = Body(...)):
     import logging
@@ -799,6 +853,8 @@ def run_scrape(body: dict = Body(...)):
             except TypeError:
                 result = scraper_engine.run_by_id(sid, title=title, url=url, kind=kind, domain=domain)
         elif mode == "site":    result = scraper_engine.run_for_site(body.get("source"), title=title, url=url, kind=kind)
+        elif mode == "web":
+            result = web_lookup(kind, title)
         else: raise HTTPException(400, "unknown mode")
     except HTTPException:
         raise
