@@ -486,13 +486,13 @@ function renderDetail(kind,id){
   infoHTML=`<div class="dinfo"><h1>${esc(item.name)}</h1>
    <div class="dmeta mono">${item.gender==='m'?'Male':'Female'}${item.aliases?' · AKA '+esc(item.aliases):''}</div>
    ${infoGrid('performer',item)}
-   <div class="dacts">
-    <button class="btn" data-action="edit"><i data-lucide="pencil"></i>Edit</button>
-    <button class="btn" data-action="fetch-info"><i data-lucide="cloud-download"></i>Update Information</button>
-    <button class="btn" data-action="share"><i data-lucide="share-2"></i>Share</button>
-    <button class="btn danger" data-action="del"><i data-lucide="trash-2"></i>Delete</button>
-   </div></div>`;
-  const movies=DB.movies.filter(m=>ensureArr(m.actorIds).includes(item.id)),scenes=DB.scenes.filter(sc=>ensureArr(sc.actorIds).includes(item.id));
+    <div class="dacts">
+     <button class="btn" data-action="edit"><i data-lucide="pencil"></i>Edit</button>
+     <button class="btn" data-action="fetch-menu"><i data-lucide="cloud-download"></i>Get Information</button>
+     <button class="btn" data-action="share"><i data-lucide="share-2"></i>Share</button>
+     <button class="btn danger" data-action="del"><i data-lucide="trash-2"></i>Delete</button>
+    </div></div>`;
+   const movies=DB.movies.filter(m=>ensureArr(m.actorIds).includes(item.id)),scenes=DB.scenes.filter(sc=>ensureArr(sc.actorIds).includes(item.id));
    extra=`${movies.length?`<div class="seclabel mono" style="margin-top:var(--dt-gap)">Movies With ${esc(item.name)}</div><div class="grid" style="--cw:200px">${movies.map(movieCard).join('')}</div>`:''}
     ${scenes.length?`<div class="seclabel mono" style="margin-top:var(--dt-gap)">Scenes With ${esc(item.name)}</div><div class="grid" style="--cw:250px">${scenes.map(sceneCard).join('')}</div>`:''}
     ${!movies.length&&!scenes.length?`<div class="seclabel mono" style="margin-top:var(--dt-gap)">Filmography</div><div class="empty"><i data-lucide="clapperboard"></i><span>No Appearances Recorded Yet.</span></div>`:''}`;

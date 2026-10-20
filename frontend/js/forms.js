@@ -293,10 +293,10 @@ function openPerformerFetchMenu(R,item,gender){
   footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`,
   mount(){icons();
    $('#pf-fi').addEventListener('click',()=>{modalSteps=null;closeModal();openFetchModal('performer',{title:name,gender:gender(),current:item||{},apply:u=>applyToPerfForm(R,u)})});
-   $('#pf-fp').addEventListener('click',()=>{modalSteps=null;closeModal();openPerformerPhotoModal(R,name)});
+   $('#pf-fp').addEventListener('click',()=>{modalSteps=null;closeModal();openPerformerPhotoModal(v=>R.photo.set(v),name)});
   }}],0,520);
 }
-function openPerformerPhotoModal(R,name){
+function openPerformerPhotoModal(setPhoto,name,onDone){
  const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,'performer')&&s.enabled);
  if(!scrapers.length){toast('No Performer Scraper Enabled','alert-triangle');return}
  let chosen=null;
@@ -319,8 +319,9 @@ function openPerformerPhotoModal(R,name){
      if(raw&&(raw.notFound||raw.error))throw new Error(raw.error||'No Match Found');
      const m=normResult('performer',raw);
      if(!m||!m.photo)throw new Error('No Picture Found');
-     R.photo.set(m.photo);
-     toast('Picture Fetched - Save The Form To Keep It','user-round');
+     setPhoto(m.photo);
+     toast(onDone?'Picture Updated':'Picture Fetched - Save The Form To Keep It','user-round');
+     if(onDone)onDone(m.photo);
      modalSteps=null;closeModal();
     }catch(err){
      toast('Picture Fetch Failed: '+err.message,'alert-triangle');

@@ -1,5 +1,27 @@
 "use strict";
 /* ===== GLOBAL EVENTS ===== */
+function applyFetchTo(kind,item,u){
+ if(u.title!=null)item.title=titleCase(u.title);
+ for(const k of ['year','date','durationMin','scenes','desc','birth','height','weight','careerStart','gender','boobs','twitter','instagram','onlyfans'])if(u[k]!=null)item[k]=u[k];
+ for(const k of ['director','ethnicity','nationality','hair','eyes','measurements','piercings','tattoos','aliases'])if(u[k]!=null)item[k]=titleCase(u[k]);
+ if(u.catNames)item.categoryIds=u.catNames.map(resolveCategory);
+ if(Array.isArray(u.performers))item.actorIds=u.performers.map(resolvePerformer);
+ if(u.studioName){const sid=resolveStudio(u.studioName);if(kind==='movie')item.studioId=sid;else item.siteId=sid}
+ if(kind==='scene'&&Array.isArray(u.groups))item.movieId=u.groups.length?resolveMovie(u.groups[0],item.siteId).id:null;
+ if(u.posterF!=null){
+  // If the existing back cover is identical to the existing front cover, it was
+  // almost certainly an auto-duplicate/placeholder from before, not a genuine
+  // distinct back cover - clear it rather than let it go stale against the new front.
+  if(item.posterB&&item.posterB===item.posterF)item.posterB='';
+  item.posterF=u.posterF;
+ }
+ if(u.posterB!=null)item.posterB=u.posterB;
+ if(u.covers){item.covers=u.covers;item.thumb=Math.min(item.thumb||0,Math.max(0,item.covers.length-1))}
+ if(u.photo!=null)item.photo=u.photo;
+ if(kind==='scene'&&Array.isArray(u.gallery))item.gallery=u.gallery;
+ Sync.push(kindPlural(kind),'update',item);
+ toast('Information Updated','cloud-download');render();
+}
 document.addEventListener('click',e=>{
  const a=e.target.closest('[data-action]');
  if(!a){
@@ -368,13 +390,27 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
     });
    }}],0,520);
  }
- else if(act==='fetch-menu'){
-  const v=state.view;if(v.name!=='detail'||(v.kind!=='movie'&&v.kind!=='scene'))return;
+  else if(act==='fetch-menu'){
+   const v=state.view;if(v.name!=='detail')return;
+   if(v.kind==='performer'){
+    const item=byId('performer',v.id);if(!item)return;
+    openModal([{title:'Get Information & Picture',
+     html:()=>`<div class="cmsg" style="margin-bottom:14px">Choose What To Fetch For <b>"${esc(item.name)}"</b>.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+       <button class="btn" data-action="perf-menu-info"><i data-lucide="cloud-download"></i>Get Performer Information</button>
+       <button class="btn" data-action="perf-menu-pic"><i data-lucide="user-round"></i>Update Performer Picture</button>
+      </div>`,
+     footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`,
+     mount(){icons()}
+    }],0,520);
+    return;
+   }
+   if(v.kind!=='movie'&&v.kind!=='scene')return;
   openModal([{title:'Get Information & Images',
    html:()=>`<div class="cmsg" style="margin-bottom:14px">Choose What To Fetch For This ${v.kind==='movie'?'Movie':'Scene'}.</div>
      <div style="display:flex;flex-direction:column;gap:8px">
       <button class="btn" data-action="fetch-info"><i data-lucide="cloud-download"></i>Update Information</button>
-      <button class="btn" data-action="fetch-posters"><i data-lucide="image-plus"></i>${v.kind==='movie'?'Update Posters':'Update Cover or Picture'}</button>
+      <button class="btn" data-action="fetch-posters"><i data-lucide="image-plus"></i>${v.kind==='movie'?'Update Posters':'Update Cover'}</button>
       ${v.kind==='scene'?`<button class="btn" data-action="fetch-gallery"><i data-lucide="images"></i>Fetch Gallery</button>`:''}
      </div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`,
@@ -384,28 +420,22 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
  else if(act==='fetch-info'||act==='fetch-posters'){
   const v=state.view;if(v.name!=='detail')return;
   const item=byId(v.kind,v.id);if(!item)return;
-  openFetchModal(v.kind,{title:item.title,gender:item.gender,current:item,postersOnly:act==='fetch-posters',apply:u=>{
-   if(u.title!=null)item.title=titleCase(u.title);
-   for(const k of ['year','date','durationMin','scenes','desc','birth','height','weight','careerStart','gender','boobs','twitter','instagram','onlyfans'])if(u[k]!=null)item[k]=u[k];
-   for(const k of ['director','ethnicity','nationality','hair','eyes','measurements','piercings','tattoos','aliases'])if(u[k]!=null)item[k]=titleCase(u[k]);
-   if(u.catNames)item.categoryIds=u.catNames.map(resolveCategory);
-   if(Array.isArray(u.performers))item.actorIds=u.performers.map(resolvePerformer);
-   if(u.studioName){const sid=resolveStudio(u.studioName);if(v.kind==='movie')item.studioId=sid;else item.siteId=sid}
-   if(v.kind==='scene'&&Array.isArray(u.groups))item.movieId=u.groups.length?resolveMovie(u.groups[0],item.siteId).id:null;
-   if(u.posterF!=null){
-    // If the existing back cover is identical to the existing front cover, it was
-    // almost certainly an auto-duplicate/placeholder from before, not a genuine
-    // distinct back cover - clear it rather than let it go stale against the new front.
-    if(item.posterB&&item.posterB===item.posterF)item.posterB='';
-    item.posterF=u.posterF;
-   }
-   if(u.posterB!=null)item.posterB=u.posterB;
-   if(u.covers){item.covers=u.covers;item.thumb=Math.min(item.thumb||0,Math.max(0,item.covers.length-1))}
-   if(u.photo!=null)item.photo=u.photo;
-   if(v.kind==='scene'&&Array.isArray(u.gallery))item.gallery=u.gallery;
-   Sync.push(kindPlural(v.kind),'update',item);
-   toast('Information Updated','cloud-download');render();
-  }});
+  openFetchModal(v.kind,{title:item.title,gender:item.gender,current:item,postersOnly:act==='fetch-posters',apply:u=>applyFetchTo(v.kind,item,u)});
+ }
+ else if(act==='perf-menu-info'){
+  const v=state.view;if(v.name!=='detail'||v.kind!=='performer')return;
+  const item=byId('performer',v.id);if(!item)return;
+  modalSteps=null;closeModal();
+  openFetchModal('performer',{title:item.name,gender:item.gender,current:item,apply:u=>applyFetchTo('performer',item,u)});
+ }
+ else if(act==='perf-menu-pic'){
+  const v=state.view;if(v.name!=='detail'||v.kind!=='performer')return;
+  const item=byId('performer',v.id);if(!item)return;
+  modalSteps=null;closeModal();
+  openPerformerPhotoModal(v=>{item.photo=v},item.name,url=>{
+   Sync.push('performers','update',item);
+   toast('Picture Updated','user-round');render();icons();
+  });
  }
  else if(act==='fetch-gallery'){
   const v=state.view;if(v.name!=='detail'||v.kind!=='scene')return;
