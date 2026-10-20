@@ -344,6 +344,13 @@ class NaughtyAmericaTests(IsolatedCase):
                          'https://images1.naughtycdn.com/cms/nacmscontent/v1/scenes/mwmp/racaelbrad/scene/horizontal/1279x852c.jpg')
         self.assertEqual(out['duration_min'], 28)
 
+    def test_h1_title_beats_the_jsonld_seo_name(self):
+        na = self._load()
+        h1 = '<h1 class="scene-title grey-text">Gracie Glam fucks professor to pass class</h1>'
+        self._feed(na, self.SCENE + h1)
+        out = na.scrape(url="https://www.naughtyamerica.com/scene/x-26021")
+        self.assertEqual(out['title'], 'Gracie Glam fucks professor to pass class')
+
     def test_performer_profile_maps(self):
         na = self._load()
         self._feed(na, self.PERF)

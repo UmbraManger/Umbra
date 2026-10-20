@@ -69,10 +69,10 @@ def _scene(url):
         return {'notFound': True, **soup}
     j = _ld(soup, 'VideoObject')
     scene = {'kind': 'scene'}
-    scene['title'] = (j.get('name') or '').strip()
-    if not scene['title']:
-        t = soup.select_one('h1.scene-title')
-        scene['title'] = t.get_text(' ', strip=True) if t else ''
+    # h1 is the scene title as people know it; JSON-LD "name" is NA's SEO
+    # variant ("Performer x & Performer y in Studio") — only a fallback.
+    t = soup.select_one('h1.scene-title')
+    scene['title'] = (t.get_text(' ', strip=True) if t else '') or (j.get('name') or '').strip()
     if not scene['title']:
         return {'notFound': True, 'url': url}
     if j.get('description'):
