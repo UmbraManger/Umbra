@@ -265,11 +265,11 @@ function performerForm(item){
    const updGender=()=>{const m=gender()==='m';$$('.fem').forEach(e=>e.style.display=m?'none':'')};
    $$('input[name=pfg]').forEach(r=>r.addEventListener('change',updGender));updGender();
    R.getStudio=()=>'__ok';
-   R.fetchBtn=$('#fetchbtn');
-   R.fetchBtn.addEventListener('click',()=>{const _n=R.nameEl?.value?.trim()||'';openFetchModal('performer',{title:_n||item?.name||'',gender:gender(),current:item||{},apply:u=>applyToPerfForm(R,u)});});
-   wireFetchToggle(R,R.nameEl);
-   return R;
-  },
+    R.fetchBtn=$('#fetchbtn');
+    R.fetchBtn.addEventListener('click',()=>openPerformerFetchMenu(R,item,gender));
+    wireFetchToggle(R,R.nameEl);
+    return R;
+   },
   onSave(){
    const name=titleCase($('#pf-name').value.trim());
    if(!name){$('#pf-name').classList.add('err');toast('Stage Name Is Required','alert-triangle');return false}
@@ -280,6 +280,54 @@ function performerForm(item){
    Sync.push('performers',editing?'update':'create',rec);
    toast('Saved');render();
   }});
+}
+function openPerformerFetchMenu(R,item,gender){
+ const name=R.nameEl?.value?.trim()||item?.name||'';
+ if(!name){$('#pf-name').classList.add('err');toast('Stage Name Is Required','alert-triangle');return}
+ openModal([{title:'Get Information & Picture',html:()=>`
+  <div class="cmsg" style="margin-bottom:14px">Choose What To Fetch For <b>"${esc(name)}"</b>.</div>
+  <div style="display:flex;flex-direction:column;gap:8px">
+   <button class="btn" id="pf-fi" type="button"><i data-lucide="cloud-download"></i>Get Performer Information</button>
+   <button class="btn" id="pf-fp" type="button"><i data-lucide="user-round"></i>Update Performer Picture</button>
+  </div>`,
+  footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`,
+  mount(){icons();
+   $('#pf-fi').addEventListener('click',()=>{modalSteps=null;closeModal();openFetchModal('performer',{title:name,gender:gender(),current:item||{},apply:u=>applyToPerfForm(R,u)})});
+   $('#pf-fp').addEventListener('click',()=>{modalSteps=null;closeModal();openPerformerPhotoModal(R,name)});
+  }}],0,520);
+}
+function openPerformerPhotoModal(R,name){
+ const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,'performer')&&s.enabled);
+ if(!scrapers.length){toast('No Performer Scraper Enabled','alert-triangle');return}
+ let chosen=null;
+ openModal([{title:'Update Performer Picture',html:()=>`
+  <div class="cmsg" style="margin-bottom:14px">Fetch A Fresh Picture For <b>"${esc(name)}"</b>.</div>
+  <div style="display:flex;flex-direction:column;gap:8px">
+   ${scrapers.map((s,i)=>`<div class="siterow scraper" data-scr="${i}"><span class="dot"></span><i data-lucide="${s.type==='python'?'file-code':'file-json'}"></i><b>${esc(s.name)}</b><span class="mono">${s.type==='python'?'Python':'YAML'}</span></div>`).join('')}
+  </div>`,
+  footer:()=>`<span class="push"></span><button class="btn primary" id="pfpp-go" disabled>Fetch Picture<i data-lucide="user-round"></i></button>`,
+  mount(b,f){
+   icons();
+   $$('.siterow[data-scr]',b).forEach(r=>r.addEventListener('click',()=>{$$('.siterow',b).forEach(x=>x.classList.remove('on'));r.classList.add('on');chosen=scrapers[+r.dataset.scr];$('#pfpp-go',f).disabled=false}));
+   $('#pfpp-go',f)?.addEventListener('click',async()=>{
+    if(!chosen)return;
+    $('#pfpp-go',f).disabled=true;$('#pfpp-go',f).innerHTML='<i data-lucide="loader"></i>Fetching...';icons(f);
+    try{
+     const r=await fetch('/api/scrape',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'performer',mode:'scraper',scraper_id:chosen.id,title:name})});
+     if(!r.ok)throw new Error('HTTP '+r.status);
+     const raw=await r.json();
+     if(raw&&(raw.notFound||raw.error))throw new Error(raw.error||'No Match Found');
+     const m=normResult('performer',raw);
+     if(!m||!m.photo)throw new Error('No Picture Found');
+     R.photo.set(m.photo);
+     toast('Picture Fetched - Save The Form To Keep It','user-round');
+     modalSteps=null;closeModal();
+    }catch(err){
+     toast('Picture Fetch Failed: '+err.message,'alert-triangle');
+     $('#pfpp-go',f).disabled=false;$('#pfpp-go',f).innerHTML='Fetch Picture<i data-lucide="user-round"></i>';icons(f);
+    }
+   });
+  }}],0,520);
 }
 function applyToPerfForm(R,u){
  if(!u)return;
