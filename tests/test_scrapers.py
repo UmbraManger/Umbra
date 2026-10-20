@@ -113,6 +113,20 @@ class MultiAssignTests(IsolatedCase):
         self.assertEqual(kinds, ["movie", "performer"])
 
 
+class JulesTokenPhraseTests(IsolatedCase):
+    """julesjordan.search_scenes matching: a local title left colon-less by
+    Windows filenames ('Case 2 Big Trouble') must still match the site title
+    'Case 2: Big Trouble' — token-phrase compare, not raw substring."""
+
+    def test_colon_stripped_query_matches_site_title(self):
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scrapers"))
+        import julesjordan as jj
+        query = jj.token_phrase("Case 2 Big Trouble")
+        self.assertIn(query, jj.token_phrase("Case 2: Big Trouble"))
+        self.assertNotIn(query, jj.token_phrase("Case 3: Small Trouble"))
+
+
 class BrazzersActorTests(IsolatedCase):
     """brazzers_scraper._actor_to_perf: Project1Service /v1/actors object â†’
     Umbra performer fields (forms.js applyToPerfForm keys)."""

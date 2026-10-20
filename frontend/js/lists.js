@@ -83,12 +83,14 @@ function toolbarHTML(tab){
   filterBtn=`<span class="fwrap2"><button class="btn" data-action="filter"><i data-lucide="sliders-horizontal"></i>Filter<span class="fbadge" data-role="fbadge" ${n?'':'style="display:none"'}>${n}</span></button></span>`;
   filterPanel=`<div class="fpop" data-role="fpop">${tab==='performers'?perfFilterPopHTML():filterPopHTML(tab)}</div>`;
  }
- const addLabel=tab==='movies'?'Add Movie':tab==='scenes'?'Add Scene':tab==='performers'?'Add Performer':tab==='studios'?'Add Studio':'Add Category';
- return `<div class="toolbar">
-  <div class="searchbox"><i data-lucide="search"></i><input placeholder="${cfg.ph}" value="${esc(t.q||'')}" data-role="q"></div>
-  ${filterBtn}<div class="sp"><div id="bulkbar-slot">${bulkBarHTML(tab)}</div></div>${mediaCtrl}
-  <button class="btn primary" data-action="add"><i data-lucide="plus"></i>${addLabel}</button>
- </div>${filterPanel}`;
+  const addLabel=tab==='movies'?'Add Movie':tab==='scenes'?'Add Scene':tab==='performers'?'Add Performer':tab==='studios'?'Add Studio':'Add Category';
+  const bulkFetchBtn=(tab==='movies'||tab==='scenes'||tab==='performers')?`<button class="btn" data-action="bulk-fetch" title="Bulk Get Information For All Or Selected Items"><i data-lucide="cloud-download"></i>Get Info</button>`:'';
+  return `<div class="toolbar">
+   <div class="searchbox"><i data-lucide="search"></i><input placeholder="${cfg.ph}" value="${esc(t.q||'')}" data-role="q"></div>
+   ${filterBtn}<div class="sp"><div id="bulkbar-slot">${bulkBarHTML(tab)}</div></div>${mediaCtrl}
+   ${bulkFetchBtn}
+   <button class="btn primary" data-action="add"><i data-lucide="plus"></i>${addLabel}</button>
+  </div>${filterPanel}`;
 }
 function filterPopHTML(tab){
  const isMovie=tab==='movies';

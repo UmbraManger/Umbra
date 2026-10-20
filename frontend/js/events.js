@@ -1,6 +1,6 @@
 "use strict";
 /* ===== GLOBAL EVENTS ===== */
-function applyFetchTo(kind,item,u){
+function applyFetchTo(kind,item,u,quiet){
  if(u.title!=null)item.title=titleCase(u.title);
  for(const k of ['year','date','durationMin','scenes','desc','birth','height','weight','careerStart','gender','boobs','twitter','instagram','onlyfans'])if(u[k]!=null)item[k]=u[k];
  for(const k of ['director','ethnicity','nationality','hair','eyes','measurements','piercings','tattoos','aliases'])if(u[k]!=null)item[k]=titleCase(u[k]);
@@ -20,7 +20,7 @@ function applyFetchTo(kind,item,u){
  if(u.photo!=null)item.photo=u.photo;
  if(kind==='scene'&&Array.isArray(u.gallery))item.gallery=u.gallery;
  Sync.push(kindPlural(kind),'update',item);
- toast('Information Updated','cloud-download');render();
+ if(!quiet){toast('Information Updated','cloud-download');render()}
 }
 document.addEventListener('click',e=>{
  const a=e.target.closest('[data-action]');
@@ -416,6 +416,11 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`,
    mount(){icons()}
   }],0,520);
+ }
+ else if(act==='bulk-fetch'){
+  const tab=state.view.tab;
+  if(tab!=='movies'&&tab!=='scenes'&&tab!=='performers')return;
+  openBulkFetchMenu(tab);
  }
  else if(act==='fetch-info'||act==='fetch-posters'){
   const v=state.view;if(v.name!=='detail')return;

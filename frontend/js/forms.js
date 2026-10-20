@@ -421,4 +421,98 @@ function studioCategoryForm(kind,item){
    }
    toast('Saved');render();
   }});
+ }
+
+/* ===== BULK FETCH (all or selected items) ===== */
+function bulkFetchItems(tab){
+ const items=bulkSel.active&&bulkSel.selected.size?[...bulkSel.selected].map(id=>byId(tab.slice(0,-1),id)).filter(Boolean):[...DB[tab]];
+ if(!items.length)toast('Nothing To Process In This Section','alert-triangle');
+ return items;
+}
+function bulkRunFetch(tab,items,op,scraperId){
+ /* op 'info': try scrapers until match, apply all fields. op 'pic': first result with a photo. */
+ const kind=tab.slice(0,-1),kindPl=tab;
+ const label=op==='pic'?'Picture':'Information';
+ const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,kind)&&s.enabled);
+ const order=scraperId?scrapers.filter(s=>s.id===scraperId):scrapers;
+ openModal([{title:`Bulk Get ${label}`,html:()=>`
+  <div class="cmsg" style="margin-bottom:14px">Fetching ${label} For ${items.length===1?'1 Item':items.length+' Items'} sequentially - This Can Take A While.</div>
+  <div style="max-height:320px;overflow:auto">
+  ${items.map((it,i)=>`<div class="siterow" id="bfr-${i}"><span class="dot"></span><b>${esc(it.title||it.name||'')}</b><span class="mono" data-st style="color:var(--faint)">Queued</span></div>`).join('')}
+  </div>`,
+  footer:()=>`<span class="push"></span><span class="mono" id="bfr-sum">0/${items.length}</span> <button class="btn" data-mclose="1">Close</button>`,
+  mount(){
+   (async()=>{
+    let ok=0;
+    for(let i=0;i<items.length;i++){
+     const it=items[i],row=$(`#bfr-${i}`);if(!row)break;
+     const st=row.querySelector('[data-st]');st.textContent='Searching...';
+     let done=false,reason='';
+     for(const s of order){
+      try{
+       const r=await fetch('/api/scrape',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,mode:'scraper',scraper_id:s.id,title:it.title||it.name||'',gallery_count:0})});
+       if(!r.ok){reason='HTTP '+r.status;continue}
+       const raw=await r.json();
+       if(raw&&(raw.notFound||raw.error)){reason=raw.error||'Not Found';continue}
+       const m=normResult(kind,raw);
+       if(!m){reason='Empty Result';continue}
+       if(op==='pic'){
+        // first scraper that answers AND yields a photo wins
+        if(!m.photo){reason='No Picture';continue}
+        it.photo=m.photo;Sync.push(kindPl,'update',it);done=true;break;
+       }
+       applyFetchTo(kind,it,m,true);done=true;break;
+      }catch(err){reason=err.message||'Error'}
+     }
+     st.textContent=done?'Found':(reason||'Not Found');
+     st.style.color=done?'var(--ok)':'var(--faint)';
+     done&&ok++;
+     const sum=$('#bfr-sum');if(sum)sum.textContent=`${ok}/${i+1}${ok===i+1?'':' · '+(i+1-ok)+' Missed'}`;
+    }
+    const row=$('#bfr-0');
+    if(row){
+     modalSteps=null;closeModal();
+     toast(`Bulk Fetch Done - ${ok} Of ${items.length} Got ${label}`,'cloud-download');render();icons();
+    }
+   })();
+  }}],0,560);
+}
+function openBulkFetchMenu(tab){
+ const kind=tab.slice(0,-1);
+ const items=bulkFetchItems(tab);
+ if(!items.length)return;
+ const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,kind)&&s.enabled);
+ let op='info';
+ const pickScraper=scraperId=>{modalSteps=null;closeModal();bulkRunFetch(tab,items,op,scraperId)};
+ const s1={title:`Bulk Get ${op==='pic'?'Picture':'Information'} - Choose Source`,html:()=>`
+  <div class="cmsg" style="margin-bottom:14px">Using <b>${op==='pic'?'Picture':'Information'}</b> For ${items.length===1?'1 Item':items.length+' Items'}. Pick How To Fetch: Go Through All Websites, Or Choose One Certain Scraper.</div>
+  <div style="display:flex;flex-direction:column;gap:8px">
+   <div class="siterow" data-bulkscr="all"><span class="dot"></span><i data-lucide="globe"></i><b>Go Through All Websites</b><span class="mono">Try Each Until A Match</span></div>
+   ${scrapers.map((s,i)=>`<div class="siterow scraper" data-bulkscr="${i}"><span class="dot"></span><i data-lucide="${s.type==='python'?'file-code':'file-json'}"></i><b>${esc(s.name)}</b><span class="mono">${s.type==='python'?'Python':'YAML'}</span></div>`).join('')||''}
+  </div>`,
+  footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button>`,
+  mount(b){
+   $$('.siterow[data-bulkscr]',b).forEach(r=>r.addEventListener('click',()=>{
+    const idx=r.dataset.bulkscr;pickScraper(idx==='all'?null:scrapers[+idx].id);
+   }));
+  }};
+ if(kind==='performer'){
+  const s0={title:'Get Information Or Picture',html:()=>`
+   <div class="cmsg" style="margin-bottom:14px">Performers: ${items.length===1?'1 Item':items.length+' Items'}. Choose What To Fetch:</div>
+   <div style="display:flex;flex-direction:column;gap:8px">
+    <div class="siterow" data-bfop="info"><span class="dot"></span><i data-lucide="cloud-download"></i><b>Get Information</b></div>
+    <div class="siterow" data-bfop="pic"><span class="dot"></span><i data-lucide="user-round"></i><b>Get Picture</b></div>
+   </div>`,
+   footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button>`,
+   mount(b){
+    $$('.siterow[data-bfop]',b).forEach(r=>r.addEventListener('click',()=>{
+     op=r.dataset.bfop;
+     s1.title=`Bulk Get ${op==='pic'?'Picture':'Information'} - Choose Source`;
+     modalIdx=1;renderModal();
+    }));
+   }};
+  openModal([s0,s1],0,560);
+  return;
+ }
+ openModal([s1],0,560);
 }

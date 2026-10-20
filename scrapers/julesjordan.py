@@ -75,6 +75,13 @@ def _feet_to_cm(text: str) -> int:
     return 0
 
 
+def token_phrase(s: str) -> str:
+    """Punctuation-free lowercase phrase: 'Auntie 2: Hung' and an imported
+    'Auntie 2 Hung' (Windows filenames cannot carry ':') both tokenize to
+    'auntie 2 hung', so a colon-stripped local title still matches the site."""
+    return " ".join(re.findall(r"[a-z0-9]+", (s or "").lower()))
+
+
 def search_scenes(title: str, base_url: str = "https://www.julesjordan.com/") -> list:
     """Search for scenes by scanning trial updates listing pages.
 
@@ -83,7 +90,7 @@ def search_scenes(title: str, base_url: str = "https://www.julesjordan.com/") ->
     """
     site = _detect_site(base_url)
     listing_base = f"https://www.{site}.com/trial/updates/page_{{}}.html"
-    query_norm = title.strip().lower()
+    query_norm = token_phrase(title)
     if not query_norm:
         return []
 
@@ -145,7 +152,7 @@ def search_scenes(title: str, base_url: str = "https://www.julesjordan.com/") ->
                     if img_src:
                         card_thumb = urljoin(page_url, img_src[0])
 
-                if query_norm in card_title.lower():
+                if query_norm and query_norm in token_phrase(card_title):
                     full_url = urljoin(page_url, href)
                     entry = {
                         "title": card_title,
