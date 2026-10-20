@@ -189,6 +189,15 @@ function toISODate(s){
  if(isNaN(d))return null;
  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
+function canonNationality(v){
+ /* Sites answer with 'US', 'United States', 'England', 'EN', 'UK'... — keep one
+    complete canonical spelling (https://en.wikipedia.org/wiki/List_of_countries). */
+ if(v==null)return v;
+ const N={us:'United States',usa:'United States','u.s.':'United States','u.s.a.':'United States','united states of america':'United States','america':'United States','american':'United States','united state':'United States',
+  uk:'United Kingdom','u.k.':'United Kingdom',en:'United Kingdom',england:'United Kingdom','great britain':'United Kingdom',gb:'United Kingdom','united kindom':'United Kingdom','united kingdon':'United Kingdom',
+  'czech republic':'Czechia','czech':'Czechia','czech republic (Czechia)':'Czechia'};
+ return N[String(v).trim().toLowerCase()]||v;
+}
 function normResult(kind,d){
  if(!d||typeof d!=='object')return null;
  const g={...d};
@@ -211,7 +220,7 @@ function normResult(kind,d){
  if(Array.isArray(g.performers))g.performers=g.performers.map(p=>typeof p==='string'?p:(p&&p.name)||'').filter(Boolean);
  if(Array.isArray(g.groups))g.groups=g.groups.map(p=>typeof p==='string'?p:(p&&p.name)||'').map(s=>String(s).trim()).filter(n=>n&&!/^(movies?|dvds?|films?)$/i.test(n));
  if(kind==='movie'){g.posterF=g.posterF||g.image||null;g.posterB=g.posterB||null}
- if(kind==='performer')g.photo=g.photo||g.image||null;
+ if(kind==='performer'){g.photo=g.photo||g.image||null;if(g.nationality)g.nationality=canonNationality(g.nationality)}
  if(g.social_urls!=null&&g.urls==null)g.urls=g.social_urls;
  return g;
 }

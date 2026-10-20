@@ -424,21 +424,26 @@ function studioCategoryForm(kind,item){
  }
 
 /* ===== BULK FETCH (all or selected items) ===== */
-function bulkFetchItems(tab){
- const items=bulkSel.active&&bulkSel.selected.size?[...bulkSel.selected].map(id=>byId(tab.slice(0,-1),id)).filter(Boolean):[...DB[tab]];
- if(!items.length)toast('Nothing To Process In This Section','alert-triangle');
+function bulkFetchItems(tab,includeDone){
+ const kind=tab.slice(0,-1);
+ let items=bulkSel.active&&bulkSel.selected.size?[...bulkSel.selected].map(id=>byId(kind,id)).filter(Boolean):[...DB[tab]];
+ if(!includeDone&&!bulkSel.active)items=items.filter(it=>!it.fetchedAt);
+ if(!items.length)toast(bulkSel.active?'Nothing Selected':'No Items Left - Everything Already Has Information (Tick "Include Already Fetched" To Redo)','alert-triangle');
  return items;
 }
-function bulkRunFetch(tab,items,op,scraperId){
- /* op 'info': try scrapers until match, apply all fields. op 'pic': first result with a photo. */
+function bulkRunFetch(tab,itemsIn,op,scraperId){
+ /* op 'info': try scrapers until match, apply all fields. op 'pic': first result with a photo.
+    Runs alphabetically; leaves the list up when finished so the outcome stays visible. */
  const kind=tab.slice(0,-1),kindPl=tab;
  const label=op==='pic'?'Picture':'Information';
+ const nameOf=it=>it.title||it.name||'';
+ const items=itemsIn.slice().sort((a,b)=>nameOf(a).localeCompare(nameOf(b)));
  const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,kind)&&s.enabled);
  const order=scraperId?scrapers.filter(s=>s.id===scraperId):scrapers;
  openModal([{title:`Bulk Get ${label}`,html:()=>`
-  <div class="cmsg" style="margin-bottom:14px">Fetching ${label} For ${items.length===1?'1 Item':items.length+' Items'} sequentially - This Can Take A While.</div>
+  <div class="cmsg" style="margin-bottom:14px">Fetching ${label} For ${items.length===1?'1 Item':items.length+' Items'} (alphabetically, sequentially) - This Can Take A While.</div>
   <div style="max-height:320px;overflow:auto">
-  ${items.map((it,i)=>`<div class="siterow" id="bfr-${i}"><span class="dot"></span><b>${esc(it.title||it.name||'')}</b><span class="mono" data-st style="color:var(--faint)">Queued</span></div>`).join('')}
+  ${items.map((it,i)=>`<div class="siterow" id="bfr-${i}"><span class="dot"></span><b>${esc(nameOf(it))}</b><span class="mono" data-st style="color:var(--faint)">Queued</span></div>`).join('')}
   </div>`,
   footer:()=>`<span class="push"></span><span class="mono" id="bfr-sum">0/${items.length}</span> <button class="btn" data-mclose="1">Close</button>`,
   mount(){
@@ -450,7 +455,7 @@ function bulkRunFetch(tab,items,op,scraperId){
      let done=false,reason='';
      for(const s of order){
       try{
-       const r=await fetch('/api/scrape',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,mode:'scraper',scraper_id:s.id,title:it.title||it.name||'',gallery_count:0})});
+       const r=await fetch('/api/scrape',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,mode:'scraper',scraper_id:s.id,title:nameOf(it),gallery_count:0})});
        if(!r.ok){reason='HTTP '+r.status;continue}
        const raw=await r.json();
        if(raw&&(raw.notFound||raw.error)){reason=raw.error||'Not Found';continue}
@@ -461,33 +466,40 @@ function bulkRunFetch(tab,items,op,scraperId){
         if(!m.photo){reason='No Picture';continue}
         it.photo=m.photo;Sync.push(kindPl,'update',it);done=true;break;
        }
-       applyFetchTo(kind,it,m,true);done=true;break;
+       it.fetchedAt=new Date().toISOString();
+       try{applyFetchTo(kind,it,m,true)}catch(e){reason='Apply Failed';continue}
+       done=true;break;
       }catch(err){reason=err.message||'Error'}
      }
      st.textContent=done?'Found':(reason||'Not Found');
      st.style.color=done?'var(--ok)':'var(--faint)';
-     done&&ok++;
-     const sum=$('#bfr-sum');if(sum)sum.textContent=`${ok}/${i+1}${ok===i+1?'':' · '+(i+1-ok)+' Missed'}`;
+     if(done)row.classList.add('found');
+     ok+=done?1:0;
+     const sum=$('#bfr-sum');if(sum)sum.textContent=`${i+1}/${items.length}${ok?' · '+ok+' Found':''}`;
+     await new Promise(res=>setTimeout(res,300));
     }
-    const row=$('#bfr-0');
-    if(row){
-     modalSteps=null;closeModal();
-     toast(`Bulk Fetch Done - ${ok} Of ${items.length} Got ${label}`,'cloud-download');render();icons();
-    }
+    const sum0=$('#bfr-sum');
+    if(sum0)sum0.textContent=`${items.length}/${items.length} · Done - ${ok} Found`;
    })();
   }}],0,560);
 }
-function openBulkFetchMenu(tab){
+function openBulkFetchMenu(tab,includeDone){
  const kind=tab.slice(0,-1);
- const items=bulkFetchItems(tab);
+ const items=bulkFetchItems(tab,includeDone);
  if(!items.length)return;
  const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,kind)&&s.enabled);
+ const hasDone=!bulkSel.active&&DB[tab].some(it=>it.fetchedAt);
  let op='info';
- const pickScraper=scraperId=>{modalSteps=null;closeModal();bulkRunFetch(tab,items,op,scraperId)};
- const s1={title:`Bulk Get ${op==='pic'?'Picture':'Information'} - Choose Source`,html:()=>`
-  <div class="cmsg" style="margin-bottom:14px">Using <b>${op==='pic'?'Picture':'Information'}</b> For ${items.length===1?'1 Item':items.length+' Items'}. Pick How To Fetch: Go Through All Websites, Or Choose One Certain Scraper.</div>
+ const pickScraper=scraperId=>{
+  const inc=hasDone&&!!$('#bf-inc')?.checked;
+  if(inc!==!!includeDone){modalSteps=null;closeModal();openBulkFetchMenu(tab,inc);return}
+  modalSteps=null;closeModal();bulkRunFetch(tab,items,op,scraperId);
+ };
+ const s1={title:()=>`Bulk Get ${op==='pic'?'Picture':'Information'} - Choose Source`,html:()=>`
+  <div class="cmsg" style="margin-bottom:14px">Using <b>${op==='pic'?'Picture':'Information'}</b> For ${items.length===1?'1 Item':items.length+' Items'}. ${kind==='performer'?'The Runner Works Alphabetically.':'Pick How To Fetch: Go Through All Websites, Or Choose One Certain Scraper.'}</div>
+  ${hasDone?`<label class="ckrow" style="margin-bottom:10px"><input type="checkbox" id="bf-inc" ${includeDone?'checked':''}>Include Items That Already Have Information (${DB[tab].filter(it=>it.fetchedAt).length})</label>`:''}
   <div style="display:flex;flex-direction:column;gap:8px">
-   <div class="siterow" data-bulkscr="all"><span class="dot"></span><i data-lucide="globe"></i><b>Go Through All Websites</b><span class="mono">Try Each Until A Match</span></div>
+   ${kind!=='performer'&&scrapers.length>1?`<div class="siterow" data-bulkscr="all"><span class="dot"></span><i data-lucide="globe"></i><b>Go Through All Websites</b><span class="mono">Try Each Until A Match</span></div>`:''}
    ${scrapers.map((s,i)=>`<div class="siterow scraper" data-bulkscr="${i}"><span class="dot"></span><i data-lucide="${s.type==='python'?'file-code':'file-json'}"></i><b>${esc(s.name)}</b><span class="mono">${s.type==='python'?'Python':'YAML'}</span></div>`).join('')||''}
   </div>`,
   footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button>`,
@@ -507,7 +519,6 @@ function openBulkFetchMenu(tab){
    mount(b){
     $$('.siterow[data-bfop]',b).forEach(r=>r.addEventListener('click',()=>{
      op=r.dataset.bfop;
-     s1.title=`Bulk Get ${op==='pic'?'Picture':'Information'} - Choose Source`;
      modalIdx=1;renderModal();
     }));
    }};

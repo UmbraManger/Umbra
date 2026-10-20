@@ -538,6 +538,8 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radiu
 .siterow.scraper svg{width:15px;height:15px;color:var(--accent)}
 .siterow .dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--line2);flex-shrink:0;transition:.12s}
 .siterow.on .dot{border-color:var(--accent);background:var(--accent);box-shadow:inset 0 0 0 2.5px var(--surface)}
+.siterow.found .dot{border-color:var(--ok);background:var(--ok);color:var(--surface);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;box-shadow:none}
+.siterow.found .dot::after{content:'✓'}
 .siterow b{font-size:13.5px;font-weight:600}
 .siterow .mono{margin-left:auto;font-size:10px;color:var(--faint);flex-shrink:0}
 .res{display:flex;gap:13px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:11px;cursor:pointer;margin-bottom:8px;transition:.12s;min-width:0}

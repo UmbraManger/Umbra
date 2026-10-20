@@ -8,7 +8,7 @@ function renderModal(mw){
  const s=modalSteps[modalIdx];
  $('#modal-root').innerHTML=`<div class="overlay" data-mclose="1"></div><div class="modal" ${mw?`style="--mw:${mw}px"`:''}>
   <div class="mhead">${modalIdx>0?`<button class="btn icon ghost" id="m-back" title="Back"><i data-lucide="arrow-left"></i></button>`:''}
-   <div class="mtitle"><span id="m-title-text">${esc(s.title)}</span><span class="mstep mono">Step ${modalIdx+1}/${modalSteps.length}</span></div>
+   <div class="mtitle"><span id="m-title-text">${esc(typeof s.title==='function'?s.title():s.title)}</span><span class="mstep mono">Step ${modalIdx+1}/${modalSteps.length}</span></div>
    <button class="btn icon ghost" data-mclose="1"><i data-lucide="x"></i></button></div>
   <div class="mbody" id="m-body">${s.html()}</div>
   <div class="mfoot" id="m-foot">${s.footer?s.footer():'<span class="push"></span>'}</div></div>`;
