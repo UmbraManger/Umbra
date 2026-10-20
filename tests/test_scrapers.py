@@ -298,6 +298,14 @@ class NaughtyAmericaTests(IsolatedCase):
             '"image":"https://img.test/profile.jpg",'
             '"description":"The horny porn star from Sydney.",'
             '"gender":"Female"}</script>')
+    SCENE2 = ('<h1 class="scene-title grey-text" role="heading" aria-level="1">'
+              'Sexy Wife Rachael Cavalli shows her husband that she likes it big</h1>'
+              '<a class="play-trailer" href="#played-trailer"><picture>'
+              '<source srcset="//images1.naughtycdn.com/cms/nacmscontent/v1/scenes/mwmp/racaelbrad/scene/horizontal/1279x852c.webp" type="image/webp" media="(min-width:801px)">'
+              '<source srcset="//images1.naughtycdn.com/cms/nacmscontent/v1/scenes/mwmp/racaelbrad/scene/horizontal/1279x852c.jpg" type="image/jpeg">'
+              '<img class="start-card" width="1279" height="852" srcset="data:image/gif;base64,R0lGODlh"></picture></a>'
+              '<picture><img srcset="//sm.naughtycdn.com/images/newTour/Playbutton.png"></picture>'
+              '<div class="duration"><span>|</span> 28 min </div>')
 
     def _load(self):
         import uuid, importlib.util
@@ -326,6 +334,15 @@ class NaughtyAmericaTests(IsolatedCase):
         self.assertEqual(out['performers'][1]['gender'], 'f')
         self.assertEqual(out['tags'], ['Ass Smacking'])       # REMASTERED HD dropped
         self.assertEqual(out['cover_a'], 'https://img.test/800x534.jpg')
+
+    def test_scene_without_ld_uses_h1_and_poster_frame(self):
+        na = self._load()
+        self._feed(na, self.SCENE2)
+        out = na.scrape(url="https://www.naughtyamerica.com/scene/whatever-1")
+        self.assertEqual(out['title'], 'Sexy Wife Rachael Cavalli shows her husband that she likes it big')
+        self.assertEqual(out['cover_a'],
+                         'https://images1.naughtycdn.com/cms/nacmscontent/v1/scenes/mwmp/racaelbrad/scene/horizontal/1279x852c.jpg')
+        self.assertEqual(out['duration_min'], 28)
 
     def test_performer_profile_maps(self):
         na = self._load()

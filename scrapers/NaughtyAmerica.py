@@ -47,6 +47,22 @@ def _minute(soup):
     return int(num.group(1)) if num else None
 
 
+def _poster(soup):
+    """Largest frame from the trailer's <picture> (jpg preferred on a size
+    tie); ld+json thumbnailUrl is the fallback."""
+    best, best_key = '', ((-1, -1), False)
+    for s in soup.select('a.play-trailer img, a.play-trailer source'):
+        u = (s.get('srcset') or '').split(',')[0].strip().split(' ')[0]
+        if not u.startswith('//') or 'playbutton' in u.lower():
+            continue                        # data: placeholders, play icon
+        m = re.search(r'(\d+)x(\d+)', u)
+        key = ((int(m.group(1)), int(m.group(2))) if m else (-1, -1),
+               u.lower().endswith(('.jpg', '.jpeg')))
+        if key > best_key:
+            best, best_key = 'https:' + u, key
+    return best or None
+
+
 def _scene(url):
     soup = _get(url)
     if isinstance(soup, dict):
@@ -55,12 +71,19 @@ def _scene(url):
     scene = {'kind': 'scene'}
     scene['title'] = (j.get('name') or '').strip()
     if not scene['title']:
+        t = soup.select_one('h1.scene-title')
+        scene['title'] = t.get_text(' ', strip=True) if t else ''
+    if not scene['title']:
         return {'notFound': True, 'url': url}
     if j.get('description'):
         scene['details'] = j['description'].strip()
-    img = j.get('thumbnailUrl')
-    if isinstance(img, list):
-        img = next((s for s in img if isinstance(s, str)), None)
+    img = _poster(soup)
+    if not img:
+        img = j.get('thumbnailUrl')
+        if isinstance(img, list):
+            img = next((s for s in img if isinstance(s, str)), None)
+    if isinstance(img, str) and img.startswith('//'):
+        img = 'https:' + img
     if isinstance(img, str) and img.startswith('http'):
         scene['image'] = scene['thumbnail'] = scene['cardThumbnail'] = scene['cover_a'] = scene['cover_b'] = img
     date = (j.get('uploadDate') or '')[:10]
