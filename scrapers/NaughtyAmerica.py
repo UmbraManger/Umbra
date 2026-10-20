@@ -1,9 +1,10 @@
 """NaughtyAmerica scraper — page HTML/JSON-LD (no public search API).
 Scene URLs (…/scene/{slug}-{id}) and /pornstar/{slug} profiles.
-Scene search goes through the sitemap index (NA's search page is a JS app);
-performer lookup by name guesses the URL slug, so names that don't map to a
-profile come back notFound."""
-import json, re, sys, time
+NA has no scannable search page (JS app behind Cloudflare) and serves 202 to
+cold requests, so title/performer search walks the public sitemap catalog once
+and caches it next to this scraper; lookups then run offline and instantly."""
+import json, os, re, sys, time
+from datetime import date, timedelta
 import requests
 from bs4 import BeautifulSoup
 
@@ -122,50 +123,87 @@ def _slug(name):
     return re.sub(r'[^a-z0-9]+', '-', (name or '').lower()).strip('-')
 
 
-_SCENE_INDEX = []
+_CAT = None
 
 
-def _scene_index(max_sitemaps=6):
-    """Every NA scene URL, read from the sitemap index.
+def _cat_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'naughtyamerica.index.json')
 
-    NA's search page is a client-side app (no server-rendered results), but the
-    sitemap index lists every scene URL with its title in the slug — the only
-    index that can actually be queried. Capped per session so one search does
-    not re-walk all 27 sitemaps.
-    """
-    global _SCENE_INDEX
-    if _SCENE_INDEX:
-        return _SCENE_INDEX
+
+def _index():
+    """{'scenes': [...urls], 'performers': [...urls]} — sitemap catalog cached
+    on disk for 30 days. One walk takes a few quiet minutes (NA throttles), so
+    it happens once; never memoized on failure so a throttled run retries."""
+    global _CAT
+    if _CAT is not None:
+        return _CAT
+    try:
+        with open(_cat_path(), encoding='utf-8') as f:
+            d = json.load(f)
+        if d.get('scenes') and date.today() - date.fromisoformat(d['built'][:10]) <= timedelta(days=30):
+            _CAT = d
+            return d
+    except Exception:
+        pass
+    _CAT = _build_index()
+    return _CAT
+
+
+def _build_index():
+    loc = re.compile(r'<loc>\s*([^<\s]+)\s*</loc>')
     soup = _get(f'{SITE_URL}/sitemap.xml')
     if isinstance(soup, dict):
-        return []
-    loc = r'<loc>\s*([^<\s]+)\s*</loc>'
-    urls = []
-    maps = [m for m in re.findall(loc, str(soup)) if '/scene' in m][:max_sitemaps]
-    for m in maps:
+        return {}
+    found = {}
+    seen = set()
+    for m in (u for u in re.findall(loc, str(soup)) if '/scene' in u or 'pornstar' in u):
+        time.sleep(2)                        # NA 202s bursts of page fetches
         s = _get(m)
         if isinstance(s, dict):
             continue
-        urls += re.findall(loc, str(s))
-    _SCENE_INDEX = urls
-    return urls
+        for u in re.findall(loc, str(s)):
+            if u in seen:
+                continue
+            seen.add(u)
+            if '/scene/' in u:
+                found.setdefault('scenes', []).append(u)
+            elif '/pornstar/' in u:
+                found.setdefault('performers', []).append(u)
+    if 'scenes' not in found:                # whole walk throttled — don't
+        return {}                            # persist an empty catalog
+    d = {'built': date.today().isoformat(), **found}
+    try:
+        with open(_cat_path(), 'w', encoding='utf-8') as f:
+            json.dump(d, f)
+    except OSError:
+        pass
+    return d
+
+
+def _match(urls, title):
+    """URL whose last slug shares the most query tokens; exact token beats
+    4-char stem (so 'tits' hits 'tit', but a 'play' stem only half-counts and
+    the slug with the literal word still wins)."""
+    qtok = [t for t in re.split(r'[^a-z0-9]+', (title or '').lower()) if len(t) > 1]
+    if not qtok or not urls:
+        return None
+    need = len(qtok) * 0.6                   # ~60% of the query tokens
+    best, best_score = None, 0.0
+    for u in urls:
+        stok = set(re.split(r'[^a-z0-9]+', u.rsplit('/', 1)[-1].split('.')[0].lower()))
+        score = sum(1.0 if q in stok else 0.5 if len(q) > 3 and
+                    any(len(s) > 3 and s[:4] == q[:4] for s in stok) else 0.0
+                    for q in qtok)
+        if score > best_score or (score == best_score and best and len(u) < len(best)):
+            best, best_score = u, score
+    return best if best_score >= need else None
 
 
 def _search_scene(title):
-    """Best sitemap match for a scene title."""
-    qtok = [t for t in re.split(r'[^a-z0-9]+', (title or '').lower()) if len(t) > 1]
-    if not qtok:
-        return {'notFound': True}
-    need = -(-len(qtok) * 7 // 10)          # ~70% of the query tokens
-    best, best_score = None, 0
-    for u in _scene_index():
-        stok = set(re.split(r'[^a-z0-9]+', u.rsplit('/', 1)[-1].lower()))
-        score = sum(1 for t in qtok if t in stok)
-        if score > best_score:
-            best, best_score = u, score
-    if not best or best_score < need:
+    best = _match(_index().get('scenes', []), title)
+    if not best:
         return {'notFound': True,
-                'error': f'no scene matching {title!r} in the sitemap index'}
+                'error': f'no scene matching {title!r} in the sitemap catalog'}
     return _scene(best)
 
 
@@ -178,7 +216,8 @@ def scrape(title="", url="", html="", kind="", **kwargs):
         return {'notFound': True, 'url': url}
     if title:
         if kind == 'performer':
-            return _performer(f'{SITE_URL}/pornstar/{_slug(title)}')
+            u = _match(_index().get('performers', []), title)
+            return _performer(u or f'{SITE_URL}/pornstar/{_slug(title)}')
         return _search_scene(title)
     return {}
 

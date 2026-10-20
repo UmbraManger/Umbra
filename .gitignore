@@ -33,3 +33,6 @@ New Text Document.txt
 # node (P6 test harness - node_modules is never committed)
 node_modules/
 
+
+# per-device scraper search cache (built from sitemaps on first use)
+scrapers/*.index.json

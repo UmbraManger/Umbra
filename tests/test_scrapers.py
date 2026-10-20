@@ -1,4 +1,5 @@
-﻿import os
+﻿import json
+import os
 import unittest
 from unittest import mock
 
@@ -348,8 +349,60 @@ class NaughtyAmericaTests(IsolatedCase):
 
     def test_scene_title_search_is_honest(self):
         na = self._load()
+        na._get = lambda url, retries=2: {'error': 'HTTP 202'}
+        na._CAT = None
         out = na.scrape(title="whatever")
         self.assertIn('notFound', out)
+
+    def test_title_search_matches_the_sitemap_catalog(self):
+        na = self._load()
+        self._feed(na, self.SCENE)          # any url returns the scene page
+        seen = {}
+        orig = na._scene
+        na._scene = lambda u: (seen.__setitem__('u', u), orig(u))[1]
+        na._CAT = {'scenes': [
+            'https://www.naughtyamerica.com/scene/naomi-cruise-fucking-in-the-bed-with-her-big-ass-1354',
+            'https://www.naughtyamerica.com/scene/gracie-glam-fucks-professor-to-pass-class-26021']}
+        out = na.scrape(title="gracie glam professor class")
+        self.assertEqual(seen['u'],
+                         'https://www.naughtyamerica.com/scene/gracie-glam-fucks-professor-to-pass-class-26021')
+        self.assertEqual(out['title'], 'Gracie Glam & Mikey Butders in Naughty Bookworms')
+
+    def test_performer_name_search_uses_the_catalog_first(self):
+        na = self._load()
+        self._feed(na, self.PERF)
+        seen = {}
+        def fake_get(url, retries=2):
+            seen['url'] = url
+            return na._soup(self.PERF, 'html.parser')
+        na._get = fake_get
+        na._CAT = {'performers': [
+            'https://www.naughtyamerica.com/pornstar/nicole-aniston']}
+        out = na.scrape(title="Angela  White", kind="performer")
+        self.assertEqual(seen['url'], 'https://www.naughtyamerica.com/pornstar/angela-white')
+        self.assertEqual(out['name'], 'Angela White')
+
+    def test_catalog_cache_is_written_and_reused_within_ttl(self):
+        na = self._load()
+        tmp = self.tmpfile("na.idx.json", b"")
+        na._cat_path = lambda: tmp
+        idx = ('<loc>https://naughtyamerica.com/sitemap-1.xml</loc>SITEMAPS'
+               '<loc>https://naughtyamerica.com/scene-1.xml</loc>')
+        child = ('<loc>https://www.naughtyamerica.com/scene/naomi-cruise-fucking-1354</loc>'
+                 '<loc>https://www.naughtyamerica.com/pornstar/angela-white</loc>')
+        pages = {'x': idx, 'https://naughtyamerica.com/scene-1.xml': child,
+                 'https://naughtyamerica.com/sitemap-1.xml': child}
+        na._get = lambda url, retries=2: na._soup(
+            pages.get(url, pages['https://naughtyamerica.com/scene-1.xml']), 'html.parser')
+        na._CAT = None
+        na._index()
+        d = json.load(open(tmp, encoding='utf-8'))
+        self.assertEqual(d['scenes'], ['https://www.naughtyamerica.com/scene/naomi-cruise-fucking-1354'])
+        self.assertEqual(d['performers'], ['https://www.naughtyamerica.com/pornstar/angela-white'])
+        # fresh file: second call loads from disk without any network
+        na._get = lambda *a, **k: (_ for _ in ()).throw(AssertionError('network hit'))
+        na._CAT = None
+        self.assertEqual(na._index()['scenes'], ['https://www.naughtyamerica.com/scene/naomi-cruise-fucking-1354'])
 
 
 class KindDetectionTests(IsolatedCase):
