@@ -472,7 +472,7 @@ function bulkRunFetch(tab,itemsIn,op,scraperId){
         const raww=await rw.json();
         if(!(raww&&(raww.notFound||raww.error))){
          const mw=normResult(kind,raww);
-         if(mw){try{applyFetchTo(kind,it,mw,true)}catch(e){reason='Apply Failed'}done=true}
+         if(mw&&titleCoverage(nameOf(it),mw.title||mw.name||'')>=0.6){try{applyFetchTo(kind,it,mw,true)}catch(e){reason='Apply Failed'}done=true}
         }
        }
       }catch(e){}
@@ -491,6 +491,9 @@ function bulkRunFetch(tab,itemsIn,op,scraperId){
         if(!m.photo){reason='No Picture';continue}
         it.photo=m.photo;it.picAt=new Date().toISOString();Sync.push(kindPl,'update',it);done=true;break;
        }
+       // wrong-scrape guard: a broad site search (Brazzers etc.) must not hijack
+       // the item with a low-coverage title
+       if(titleCoverage(nameOf(it),m.title||m.name||'')<0.6){reason='Low Match';continue}
        try{applyFetchTo(kind,it,m,true)}catch(e){reason='Apply Failed';continue}
        done=true;break;
       }catch(err){reason=err.message||'Error'}
@@ -504,6 +507,8 @@ function bulkRunFetch(tab,itemsIn,op,scraperId){
     }
     const sum0=$('#bfr-sum');
     if(sum0)sum0.textContent=`${items.length}/${items.length} · Done - ${ok} Found`;
+    // show the applied information instantly, no tab change needed
+    render();icons();
    })();
   }}],0,560);
 }

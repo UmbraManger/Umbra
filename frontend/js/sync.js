@@ -209,6 +209,12 @@ function canonNationality(v){
  };
  return N[String(v).trim().toLowerCase()]||v;
 }
+function titleCoverage(q,t){
+ const a=[...String(q||'').toLowerCase().replace(/'/g,'').match(/[a-z0-9]+/g)||[]];
+ const b=new Set(String(t||'').toLowerCase().replace(/'/g,'').match(/[a-z0-9]+/g)||[]);
+ if(!a.length)return 0;
+ return a.filter(x=>b.has(x)).length/a.length;
+}
 function normResult(kind,d){
  if(!d||typeof d!=='object')return null;
  const g={...d};

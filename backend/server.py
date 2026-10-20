@@ -567,8 +567,17 @@ def scan_progress() -> dict:
 def _scan_candidates(dirs: list) -> list:
     files = scanner.walk(dirs)
     _SCAN.update(active=True, done=0, total=len(files))
+    # Self-heal the "already imported" markers: if a marked file has no library
+    # row anymore (record deleted through any path, or by an older build), it
+    # must be offered for import again.
+    linked = {os.path.normcase(p) for r in
+              db.query("SELECT file_path FROM movies WHERE file_path IS NOT NULL "
+                       "UNION ALL SELECT file_path FROM scenes WHERE file_path IS NOT NULL")
+              for p in [r["file_path"]]}
     try:
         for i, f in enumerate(files, 1):
+            if scanner.is_imported(f["path"]) and os.path.normcase(f["path"]) not in linked:
+                scanner.remove_done(f["path"])
             f["imported"] = scanner.is_imported(f["path"])
             f["guess_title"] = scanner.guess_title(f["path"])
             dur = scanner.probe_duration(f["path"])
@@ -808,7 +817,37 @@ def search_web(query: str) -> list:
             seen.add(h); out.append(u)
     return out
 
+def _accepts(title: str, res, threshold: float = 0.6) -> bool:
+    """A result is only worth applying when its title actually covers the
+    query's tokens — stops a loose search (e.g. Brazzers' broad search) from
+    hijacking an item with some other scene."""
+    import titlematch
+    if not isinstance(res, dict): return False
+    if res.get("notFound") or res.get("error"): return False
+    t = res.get("title") or res.get("name") or ""
+    return titlematch.coverage(title, t) >= threshold
+
 def web_lookup(kind: str, title: str) -> dict:
+    # 1) Official-site sweep: try every bundled domain an installed scraper
+    #    covers, in catalog order, and take the first result that clearly
+    #    matches the title.
+    import official_sites as osites
+    tried_hosts = set()
+    for domain, studio in osites.OFFICIAL_SITES:
+        if domain in tried_hosts: continue
+        tried_hosts.add(domain)
+        try:
+            res = scraper_engine.run_for_site(domain, title=title, url="", kind=kind)
+        except Exception:
+            continue
+        if res.get("notFound") or res.get("error"): continue
+        if _accepts(title, res):
+            res["via"] = domain
+            return res
+        # An installed scraper answered but the title didn't hold up — keep
+        # searching (do not let it hijack the item).
+    # 2) Search-engine routing: quote the title, take hits only from domains
+    #    an installed scraper covers, same acceptance bar.
     cands = search_web(title)
     last = None
     for u in cands[:8]:
@@ -816,10 +855,9 @@ def web_lookup(kind: str, title: str) -> dict:
             res = scraper_engine.run_for_site(u, title=title, url=u, kind=kind)
         except Exception as e:
             last = e; continue
-        if isinstance(res, dict) and not res.get("notFound") and not res.get("error"):
+        if _accepts(title, res):
             host = urlparse(u).hostname or ""
-            host = host[4:] if host.startswith("www.") else host
-            if isinstance(res, dict): res["via"] = host
+            res["via"] = host[4:] if host.startswith("www.") else host
             return res
     raise HTTPException(404, "web search found nothing on an installed site"
                         + (f" ({last})" if last else ""))
