@@ -238,8 +238,7 @@ def _register_crud(kind):
         path = None
         if kind in ("movies", "scenes"):
             row = db.one(f"SELECT file_path FROM {TABLES[kind]} WHERE id=?", (rid,))
-            if row: path = row["file_path"]
-        # Validate the destructive part BEFORE touching any row.
+            if row: path = row["file_path"]        # Validate the destructive part BEFORE touching any row.
         if file and path:
             if confirm != "DELETE":
                 raise HTTPException(400, 'refusing to delete the video file without confirm="DELETE"')
@@ -258,6 +257,10 @@ def _register_crud(kind):
         db.execute(f"DELETE FROM {TABLES[kind]} WHERE id=?", (rid,))
         if old_row and kind in _IMG_COLS:
             _prune_record_images(kind, old_row)
+        # Deleting the record frees the file for a re-import: forget its
+        # "already imported" marker so the next scan offers it again.
+        if kind in ("movies", "scenes") and path:
+            scanner.remove_done(path)
         file_removed = False
         if file and path and os.path.isfile(path):
             try:
@@ -272,12 +275,15 @@ def _register_crud(kind):
         # the table. Cross-kind references are left stale on purpose (the UI
         # confirm says so).
         old_rows = db.query(f"SELECT * FROM {TABLES[kind]}") if kind in _IMG_COLS else []
+        paths = [r["file_path"] for r in db.query(f"SELECT file_path FROM {TABLES[kind]} WHERE file_path IS NOT NULL")] if kind in ("movies", "scenes") else []
         if kind == "movies":
             db.execute("UPDATE scenes SET movie_id=NULL WHERE movie_id IS NOT NULL")
         db.execute("DELETE FROM positions WHERE media_id LIKE ?", (kind[:-1] + ":%",))
         db.execute(f"DELETE FROM {TABLES[kind]}")
         for row in old_rows:
             _prune_record_images(kind, row)
+        for p in paths:                # rescan re-offers these files (see delete())
+            scanner.remove_done(p)
         return {"ok": True}
     app.post(f"/api/{kind}")(create)
     app.put(f"/api/{kind}")(update)

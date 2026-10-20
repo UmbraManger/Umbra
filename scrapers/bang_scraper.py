@@ -303,7 +303,8 @@ def scrape(title="", url="", html="", kind=""):
         results = search_scenes(title)
         if isinstance(results, list) and results:
             # Follow through to get full scene details from the scene page
-            first = results[0]
+            import titlematch
+            first = titlematch.best(results, title)
             scene_url = first.get('url')
             if scene_url:
                 try:

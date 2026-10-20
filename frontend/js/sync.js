@@ -190,12 +190,23 @@ function toISODate(s){
  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 function canonNationality(v){
- /* Sites answer with 'US', 'United States', 'England', 'EN', 'UK'... — keep one
-    complete canonical spelling (https://en.wikipedia.org/wiki/List_of_countries). */
+ /* Sites answer with 'US', 'United States', 'England', 'AU', 'CZ'... — these
+    mostly ARE ISO 3166 alpha-2 (or legacy) codes; keep one complete canonical
+    spelling per country. Unknown values pass through untouched. */
  if(v==null)return v;
- const N={us:'United States',usa:'United States','u.s.':'United States','u.s.a.':'United States','united states of america':'United States','america':'United States','american':'United States','united state':'United States',
+ const N={
+  us:'United States',usa:'United States','u.s.':'United States','u.s.a.':'United States','united states of america':'United States','america':'United States','american':'United States','united state':'United States',
   uk:'United Kingdom','u.k.':'United Kingdom',en:'United Kingdom',england:'United Kingdom','great britain':'United Kingdom',gb:'United Kingdom','united kindom':'United Kingdom','united kingdon':'United Kingdom',
-  'czech republic':'Czechia','czech':'Czechia','czech republic (Czechia)':'Czechia'};
+  au:'Australia',nz:'New Zealand',ca:'Canada',de:'Germany',fr:'France',it:'Italy',es:'Spain',pt:'Portugal',nl:'Netherlands',be:'Belgium',lu:'Luxembourg',
+  at:'Austria',ch:'Switzerland',ie:'Ireland',se:'Sweden',no:'Norway',dk:'Denmark',fi:'Finland',is:'Iceland',gr:'Greece',pl:'Poland',
+  cz:'Czechia','czech republic':'Czechia','czech republic (czechia)':'Czechia',czech:'Czechia',sk:'Slovakia',hu:'Hungary',ro:'Romania',bg:'Bulgaria',rs:'Serbia',hr:'Croatia',si:'Slovenia',
+  ru:'Russia',ua:'Ukraine',by:'Belarus',md:'Moldova',lv:'Latvia',lt:'Lithuania',ee:'Estonia',ge:'Georgia',am:'Armenia',
+  tr:'Turkey',il:'Israel',ae:'United Arab Emirates',sa:'Saudi Arabia',eg:'Egypt',ma:'Morocco',za:'South Africa',ng:'Nigeria',ke:'Kenya',
+  br:'Brazil',mx:'Mexico',ar:'Argentina',cl:'Chile',co:'Colombia',pe:'Peru',ve:'Venezuela',uy:'Uruguay',py:'Paraguay',bo:'Bolivia',ec:'Ecuador',
+  cr:'Costa Rica',pa:'Panama',do:'Dominican Republic','dominican republic':'Dominican Republic',cu:'Cuba',pr:'Puerto Rico',
+  jp:'Japan',kr:'South Korea','south korea':'South Korea',cn:'China',hk:'Hong Kong',tw:'Taiwan',mo:'Macau',mn:'Mongolia',
+  th:'Thailand',ph:'Philippines',id:'Indonesia',vn:'Vietnam',my:'Malaysia',sg:'Singapore',in:'India',pk:'Pakistan',lk:'Sri Lanka',np:'Nepal',
+ };
  return N[String(v).trim().toLowerCase()]||v;
 }
 function normResult(kind,d){

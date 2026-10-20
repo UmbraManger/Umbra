@@ -6,6 +6,7 @@ server dependencies such as cloudscraper) are not installed:
 import db
 import importlib
 import os
+import scanner
 import tempfile
 import threading
 import unittest
@@ -107,6 +108,22 @@ class CrudTests(ServerCase):
         r = self.client.post("/api/movies/deleteAll", json={"confirm": "DELETE"}, headers=self.h)
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(self.library()["movies"], [])
+
+    def test_deleting_a_record_frees_its_file_for_reimport(self):
+        """Cleared movies must re-appear in the Import From Scan dialog: the
+        delete endpoints forget the scanner's 'already imported' marker."""
+        v = os.path.join(self._tmp, "film.mp4")
+        open(v, "wb").close()
+        scanner.mark_done(v)
+        self.assertTrue(scanner.is_imported(v))
+        mid = self.create_movie(file_path=v)
+        self.client.delete(f"/api/movies/{mid}", headers=self.h)
+        self.assertFalse(scanner.is_imported(v))
+        # deleteAll (the 'Clear Movies' toolbar action) does the same for all rows
+        scanner.mark_done(v)
+        self.create_movie(file_path=v)
+        self.client.post("/api/movies/deleteAll", json={"confirm": "DELETE"}, headers=self.h)
+        self.assertFalse(scanner.is_imported(v))
 
 
 class FrontendServingTests(ServerCase):

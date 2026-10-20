@@ -645,8 +645,10 @@ def scrape(title: str = "", url: str = "", html: str = "", **kwargs) -> dict:
         hits = search_scenes(title)
         if not hits:
             return {"notFound": True, "query": title}
-        url = hits[0]["url"]
-        _search_card_thumb = hits[0].get("cardThumbnail", "")
+        import titlematch
+        hit = titlematch.best(hits, title)
+        url = hit["url"]
+        _search_card_thumb = hit.get("cardThumbnail", "")
 
     if html:
         out = scrape_scene_detail(url, html=html)

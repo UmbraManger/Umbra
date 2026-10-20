@@ -470,7 +470,8 @@ def scrape(title="", url="", html=""):
     if title:
         results = search_scenes(title)
         if isinstance(results, list) and results:
-            return results[0]
+            import titlematch
+            return titlematch.best(results, title)
         return results
     return {'error': 'need url or title'}
 

@@ -19,6 +19,7 @@ function applyFetchTo(kind,item,u,quiet){
  if(u.covers){item.covers=u.covers;item.thumb=Math.min(item.thumb||0,Math.max(0,item.covers.length-1))}
  if(u.photo!=null)item.photo=u.photo;
  if(kind==='scene'&&Array.isArray(u.gallery))item.gallery=u.gallery;
+ item.infoAt=new Date().toISOString();
  Sync.push(kindPlural(kind),'update',item);
  if(!quiet){toast('Information Updated','cloud-download');render()}
 }
@@ -438,6 +439,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   const item=byId('performer',v.id);if(!item)return;
   modalSteps=null;closeModal();
   openPerformerPhotoModal(v=>{item.photo=v},item.name,url=>{
+   item.picAt=new Date().toISOString();
    Sync.push('performers','update',item);
    toast('Picture Updated','user-round');render();icons();
   });

@@ -291,7 +291,8 @@ def scrape(title="", url="", html="", kind=""):
             return {'notFound': True}
         results = search_scenes(title)
         if isinstance(results, list) and results:
-            return results[0]
+            import titlematch
+            return titlematch.best(results, title)
         return results
     return {'error': 'need url or title'}
 

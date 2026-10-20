@@ -12,7 +12,8 @@ def scrape(title="", url="", html="", kind="", **kwargs):
     if title:
         results = algolia.search_scenes(title, SITE_URL, REFERER)
         if isinstance(results, list) and results:
-            return results[0]
+            import titlematch
+            return titlematch.best(results, title)
         return results
     return {}
 

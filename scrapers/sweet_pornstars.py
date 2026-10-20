@@ -296,7 +296,8 @@ def search(query, kind="performer", **kwargs):
         if not scenes:
             scenes = lookup_scenes_by_performer(query)
         if scenes:
-            scene = scenes[0]
+            import titlematch
+            scene = titlematch.best(scenes, query)
             # Fetch gallery if requested
             if gallery_count > 0:
                 try:

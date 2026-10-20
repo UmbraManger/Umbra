@@ -212,7 +212,11 @@ def search(query, site_url="https://www.brazzers.com", default_studio="Unknown",
         scene = release_to_scene(rel, default_studio, site_url)
         if scene.get('title'):
             results.append(scene)
-    return results[:limit] if results else {'notFound': True}
+    if results:
+        import titlematch
+        results.sort(key=lambda s: titlematch.coverage(query, s.get('title')), reverse=True)
+        return results[:limit]
+    return {'notFound': True}
 
 
 def get_scene(scene_id, site_url="https://www.brazzers.com", default_studio="Unknown"):
