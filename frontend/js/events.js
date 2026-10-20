@@ -372,11 +372,12 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   const v=state.view;if(v.name!=='detail'||(v.kind!=='movie'&&v.kind!=='scene'))return;
   openModal([{title:'Get Information & Images',
    html:()=>`<div class="cmsg" style="margin-bottom:14px">Choose What To Fetch For This ${v.kind==='movie'?'Movie':'Scene'}.</div>
-    <div style="display:flex;flex-direction:column;gap:8px">
-     <button class="btn" data-action="fetch-info"><i data-lucide="cloud-download"></i>Update Information</button>
-     <button class="btn" data-action="fetch-posters"><i data-lucide="image-plus"></i>${v.kind==='movie'?'Update Posters':'Update Covers'}</button>
-     ${v.kind==='scene'?`<button class="btn" data-action="fetch-gallery"><i data-lucide="images"></i>Fetch Gallery</button>`:''}
-    </div>`,
+     <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn" data-action="fetch-info"><i data-lucide="cloud-download"></i>Update Information</button>
+      <button class="btn" data-action="fetch-posters"><i data-lucide="image-plus"></i>${v.kind==='movie'?'Update Posters':'Update Cover or Picture'}</button>
+      ${v.kind==='scene'?`<button class="btn" data-action="fetch-gallery"><i data-lucide="images"></i>Fetch Gallery</button>
+      <button class="btn" data-action="fetch-actors"><i data-lucide="user-round"></i>Update Performer Pictures</button>`:''}
+     </div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`,
    mount(){icons()}
   }],0,520);
@@ -455,9 +456,43 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
      }
     });
    }};
-  openModal([s0],0,520);
- }
- else if(act==='ai-save'){
+   openModal([s0],0,520);
+  }
+  else if(act==='fetch-actors'){
+   const v=state.view;if(v.name!=='detail'||v.kind!=='scene')return;
+   const item=byId('scene',v.id);if(!item)return;
+   const perfs=ensureArr(item.actorIds).map(id=>DB.performers.find(p=>p.id===id)).filter(Boolean);
+   if(!perfs.length){toast('No Performers On This Scene','alert-triangle');return}
+   const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,'performer')&&s.enabled);
+   if(!scrapers.length){toast('No Performer Scraper Enabled','alert-triangle');return}
+   let chosen=null;
+   const s0={title:'Update Performer Pictures',html:()=>`
+    <div class="cmsg" style="margin-bottom:14px">Fetch A Picture For Each Of The ${perfs.length} Performer${perfs.length>1?'s':''} Of <b>"${esc(item.title)}"</b>.</div>
+    ${scrapers.map((s,i)=>`<div class="siterow scraper" data-scr="${i}"><span class="dot"></span><i data-lucide="${s.type==='python'?'file-code':'file-json'}"></i><b>${esc(s.name)}</b><span class="mono">${s.type==='python'?'Python':'YAML'}</span></div>`).join('')}`,
+    footer:()=>`<span class="push"></span><button class="btn primary" id="pf-go" disabled>Fetch Pictures<i data-lucide="user-round"></i></button>`,
+    mount(b,f){
+     $$('.siterow[data-scr]',b).forEach(r=>r.addEventListener('click',()=>{$$('.siterow',b).forEach(x=>x.classList.remove('on'));r.classList.add('on');chosen=scrapers[+r.dataset.scr];$('#pf-go',f).disabled=false}));
+     $('#pf-go',f)?.addEventListener('click',async()=>{
+      $('#pf-go',f).disabled=true;$('#pf-go',f).innerHTML='<i data-lucide="loader"></i>Fetching...';icons(f);
+      let ok=0;
+      for(const p of perfs){
+       try{
+        const r=await fetch('/api/scrape',{method:'POST',headers:{'Content-Type':'application/json'},
+         body:JSON.stringify({kind:'performer',mode:'scraper',scraper_id:chosen.id,title:p.name})});
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        const m=normResult('performer',await r.json());
+        if(m&&m.photo&&!m.notFound&&!m.error){p.photo=m.photo;Sync.push('performers','update',p);ok++}
+       }catch(e){/* one performer failing must not stop the rest */}
+      }
+      if(!modalSteps||modalSteps[0]!==s0)return;
+      modalSteps=null;closeModal();
+      toast(ok+' Of '+perfs.length+' Performer Pictures Updated','user-round');
+      render();icons();
+     });
+    }};
+   openModal([s0],0,520);
+  }
+  else if(act==='ai-save'){
   settings.ai.provider=$('#ai-provider').value;
   settings.ai.endpoint=$('#ai-endpoint').value.trim();
   settings.ai.model=$('#ai-model').value.trim();

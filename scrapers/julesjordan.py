@@ -7,8 +7,10 @@ Fixed:
 - Scene detail: updated selectors for current layout (h1 title, /trial/models/ performers, "Released:" date)
 - Removed dependency on jj-card-thumb class which may not exist
 """
+import os
 import re
 import json
+from datetime import date, timedelta
 from urllib.parse import urlparse, urljoin
 from lxml import html as lxml_html
 import requests
@@ -235,7 +237,7 @@ def _find_card_thumbnail(base_url: str, scene_url: str) -> str:
     return ""
 
 
-# ── Movie ("groups") extraction ───────────────────────────────────
+# ── Series ("groups") extraction ───────────────────────────────────
 # Scene pages link to /dvds/ and /movies/ in two very different ways:
 #   * navigation ("Movies", "DVDs") → the listing index, never a title
 #   * this scene's movie            → a specific /dvds/<id>/<slug>.html page
@@ -281,7 +283,7 @@ def _in_side_box(el) -> bool:
     return False
 
 
-def _movie_groups(doc, base_url: str, meta_items=None) -> list:
+def _series_groups(doc, base_url: str, meta_items=None) -> list:
     """Movie links found on a scene page, best candidate first.
 
     A labelled detail row ("MovieSome Title") wins, then links the page
@@ -477,7 +479,7 @@ def scrape_scene_detail(url: str, html: str = "") -> dict:
     out["tags"] = tags
 
     # ── Groups (Movies/DVDs) ───────────────────────────────────────
-    groups = _movie_groups(doc, base_url, meta_items)
+    groups = _series_groups(doc, base_url, meta_items)
     if groups:
         out["groups"] = groups
 
@@ -532,7 +534,87 @@ def scrape_scene_detail(url: str, html: str = "") -> dict:
     return out
 
 
-def scrape(title: str = "", url: str = "", html: str = "") -> dict:
+_JJ_MODELS = None
+
+
+def _model_urls():
+    """Every /trial/models/{Name}.html page — the site paginates them under
+    /trial/models/models_{n}.html. Cached on disk next to this scraper for
+    30 days (the walk is ~40 static pages, one fetch each)."""
+    global _JJ_MODELS
+    if _JJ_MODELS is not None:
+        return _JJ_MODELS
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'julesjordan.index.json')
+    try:
+        with open(here, encoding='utf-8') as f:
+            d = json.load(f)
+        if date.today() - date.fromisoformat(d['built'][:10]) <= timedelta(days=30):
+            _JJ_MODELS = d['models']
+            return _JJ_MODELS
+    except Exception:
+        pass
+    urls = set()
+    for page in range(1, 60):
+        u = ('https://www.julesjordan.com/trial/models/models.html'
+             if page == 1 else f'https://www.julesjordan.com/trial/models/models_{page}.html')
+        try:
+            r = requests.get(u, timeout=20, headers=HEADERS)
+        except Exception:
+            break
+        if r.status_code != 200:
+            break
+        got = {u2 for u2 in re.findall(
+            r'href="(?:https://www\.julesjordan\.com)?(/trial/models/[A-Za-z0-9-]+\.html)"',
+            r.text) if 'models' not in u2.rsplit('/', 1)[-1]}
+        if got <= urls:
+            break
+        urls |= got
+    if urls:
+        out = sorted(urls)
+        try:
+            with open(here, 'w', encoding='utf-8') as f:
+                json.dump({'built': date.today().isoformat(), 'models': out}, f)
+        except OSError:
+            pass
+        _JJ_MODELS = out
+        return _JJ_MODELS
+    return []
+
+
+def _performer_url_for_name(name: str) -> str:
+    """Performer pages are /trial/models/{NameNoSpaces}.html; name lookup is a
+    cache check against the paged directory catalog."""
+    want = re.sub(r'[^a-z0-9]', '', (name or '').lower())
+    if not want:
+        return ''
+    sq = lambda s: re.sub(r'[^a-z0-9]', '', s.lower())
+    best = ''
+    for href in _model_urls():
+        key = sq(href.rsplit('/', 1)[-1].replace('.html', ''))
+        if key == want:
+            return 'https://www.julesjordan.com' + href
+        if not best and key.startswith(want[:6] or want):
+            best = 'https://www.julesjordan.com' + href
+    if best:
+        return best
+    # trial tour lists only current models — older performer names resolve via
+    # the cast links of their scenes (scene search covers the back catalog)
+    for hit in (search_scenes(name) or [])[:3]:
+        url2 = hit.get('url')
+        if not url2:
+            continue
+        try:
+            r2 = requests.get(url2, timeout=20, headers=HEADERS)
+        except Exception:
+            continue
+        for href in re.findall(r'href="((?:https://www\.julesjordan\.com)?/trial/models/[A-Za-z0-9-]+\.html)"', r2.text):
+            key = sq(href.rsplit('/', 1)[-1].replace('.html', ''))
+            if key == want:
+                return 'https://www.julesjordan.com' + href
+    return best
+
+
+def scrape(title: str = "", url: str = "", html: str = "", **kwargs) -> dict:
     """
     Main scrape function.
     Returns dict with keys:
@@ -548,6 +630,11 @@ def scrape(title: str = "", url: str = "", html: str = "") -> dict:
     _search_card_thumb = ""
 
     if not html and not url:
+        if kwargs.get("kind") == "performer":
+            url = _performer_url_for_name(title)
+            if not url:
+                return {"notFound": True, "query": title}
+            return scrape(url=url, kind="performer")
         hits = search_scenes(title)
         if not hits:
             return {"notFound": True, "query": title}
