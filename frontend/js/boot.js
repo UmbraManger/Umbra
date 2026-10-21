@@ -56,6 +56,8 @@ async function lockApp(){
    <button id="lock-unlock" class="btn primary" style="margin-top:18px;width:100%">Unlock</button>
   </div>`;
   root.innerHTML=panel;
+  icons();   // the password screen mounts before any other render call,
+             // so without this the lucide <i> never becomes an SVG
   $('#lock-pass').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('lock-unlock').click()});
   $('#lock-unlock').addEventListener('click',async()=>{
    const pass=$('#lock-pass').value;

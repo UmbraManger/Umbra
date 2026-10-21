@@ -9,6 +9,32 @@
 <script src="lucide.min.js"></script>
 <script src="modern-screenshot.min.js"></script>
 <script>
+/* Paint the stored theme + custom background BEFORE the first frame: the app
+   chain applies the saved look much later (state.js), so without this every
+   start flashes the stylesheet's default dark ink before switching to the
+   user's background - on the splash, and behind the lock screen. Mirrors
+   applyAdvanced()'s background math exactly. */
+(function(){
+ try{
+  const s=JSON.parse(localStorage.getItem('obscura:v1')||'null');
+  if(!s)return;
+  const r=document.documentElement;
+  if(s.theme)r.dataset.theme=s.theme;
+  const a=s.adv||{};
+  const mix=(h,f)=>{const n=parseInt(h.slice(1),16);let R=(n>>16&255),G=(n>>8&255),B=(n&255);
+   if(f<0){R*=(1+f);G*=(1+f);B*=(1+f)}else{R+=(255-R)*f;G+=(255-G)*f;B+=(255-B)*f}
+   return '#'+[R,G,B].map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('')};
+  if(a.accent)r.style.setProperty('--accent',a.accent);
+  if(a.background){
+   r.style.setProperty('--bg',a.background);
+   r.style.setProperty('--bg2',mix(a.background,-0.06));
+   r.style.setProperty('--surface',mix(a.background,0.04));
+   r.style.setProperty('--surface2',mix(a.background,0.07));
+  }
+ }catch(e){}
+})();
+</script>
+<script>
 (function(){
  function show(msg){
   if(!document.body)return;
