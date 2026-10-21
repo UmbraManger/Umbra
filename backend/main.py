@@ -95,6 +95,9 @@ class _WinControls:
             self._window.destroy()
 
 def main():
+    # Re-arm the app lock from the stored settings BEFORE serving anything,
+    # so a password set in the last session locks this start too.
+    _apply_startup_lock()
     port = find_port()
     url = f"http://127.0.0.1:{port}"
     # A windowed (console=False) build has no sys.stderr/sys.stdout, and uvicorn's

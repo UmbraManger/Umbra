@@ -391,6 +391,25 @@ class AppLockTests(ServerCase):
         self.srv.db.connect()
         self.assertTrue(self.srv.crypto.is_locked())
 
+    def test_startup_rearms_the_lock_on_a_fresh_process(self):
+        """Regression, fixed: main._apply_startup_lock() existed but was never
+        called — with app lock enabled every start opened fully unlocked."""
+        self.client.post("/api/lock", json={"passphrase": "secr3t"}, headers=self.h)
+        self.srv.crypto.set_locked(False)          # as if a session unlocked it
+        import main as entry
+        entry._apply_startup_lock()                # ... then the app restarted
+        self.assertTrue(self.srv.crypto.is_locked())
+        # correct passphrase still opens
+        r = self.client.post("/api/unlock", json={"passphrase": "secr3t"}, headers=self.h)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertFalse(self.srv.crypto.is_locked())
+        # ... and disabling the toggle keeps the next start open
+        self.srv.db.get_settings()                 # read for realism
+        s = self.srv.db.get_settings(); s["lock"]["on"] = False; self.srv.db.save_settings(s)
+        self.srv.crypto.set_locked(False)
+        entry._apply_startup_lock()
+        self.assertFalse(self.srv.crypto.is_locked())
+
     def test_allowlisted_endpoints_answer_while_locked(self):
         self.client.post("/api/lock", json={"passphrase": "secr3t"}, headers=self.h)
         self.assertEqual(self.client.post("/api/lock/now", headers=self.h).status_code, 200)
