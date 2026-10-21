@@ -517,11 +517,13 @@ function openBulkFetchMenu(tab,includeDone=false,op=null){
  const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,kind)&&s.enabled);
  const opLabel=x=>x==='pic'?'Picture':'Information';
  const isPerf=kind==='performer';
- if(op==null)op='info';
+ // `op==null` means "the caller hasn't chosen the operation yet" — performers
+ // get the Info/Photo chooser first, so default lazily via opOf(), never here.
+ const opOf=()=>op||'info';
  const start=()=>{
-  const items=bulkFetchItems(tab,op,includeDone);
+  const items=bulkFetchItems(tab,opOf(),includeDone);
   if(!items.length)return;
-  modalSteps=null;closeModal();bulkRunFetch(tab,items,op,scraperIdNow);
+  modalSteps=null;closeModal();bulkRunFetch(tab,items,opOf(),scraperIdNow);
  };
  let scraperIdNow;
   const pickScraper=scraperId=>{
@@ -529,15 +531,15 @@ function openBulkFetchMenu(tab,includeDone=false,op=null){
    // it as false bounced the picker between screens forever instead of starting.
    const c=$('#bf-inc'),inc=c?c.checked:!!includeDone;
    scraperIdNow=scraperId;
-   if(inc!==!!includeDone){modalSteps=null;closeModal();openBulkFetchMenu(tab,inc,op);return}
+   if(inc!==!!includeDone){modalSteps=null;closeModal();openBulkFetchMenu(tab,inc,opOf());return}
    start();
   };
- const s1={title:()=>`Bulk ${opLabel(op)} - Source`,icon:op==='pic'?'user-round':'cloud-download',html:()=>{
-    const items=pendingItems(tab,op,includeDone);
+ const s1={title:()=>`Bulk ${opLabel(opOf())} - Source`,icon:opOf()==='pic'?'user-round':'cloud-download',html:()=>{
+    const items=pendingItems(tab,opOf(),includeDone);
     const doneCnt=DB[tab].length-items.length;
     return `
-    <div class="cmsg" style="margin-bottom:14px">Bulk ${opLabel(op)} For ${items.length===1?'1 Item':items.length+' Items'}${doneCnt>0&&!bulkSel.active?` (${doneCnt} Already Filled - Skipped)`:''}. ${isPerf?'Runs Alphabetically.':'Run Through All Websites, Or Choose One Scraper.'}</div>
-    ${doneCnt>0&&!bulkSel.active?`<label class="ckrow" style="margin-bottom:10px"><input type="checkbox" id="bf-inc" ${includeDone?'checked':''}>Include Items That Already Have ${opLabel(op)} (${doneCnt})</label>`:''}
+    <div class="cmsg" style="margin-bottom:14px">Bulk ${opLabel(opOf())} For ${items.length===1?'1 Item':items.length+' Items'}${doneCnt>0&&!bulkSel.active?` (${doneCnt} Already Filled - Skipped)`:''}. ${isPerf?'Runs Alphabetically.':'Run Through All Websites, Or Choose One Scraper.'}</div>
+    ${doneCnt>0&&!bulkSel.active?`<label class="ckrow" style="margin-bottom:10px"><input type="checkbox" id="bf-inc" ${includeDone?'checked':''}>Include Items That Already Have ${opLabel(opOf())} (${doneCnt})</label>`:''}
     <div style="display:flex;flex-direction:column;gap:8px">
      ${!isPerf&&scrapers.length>1?`<div class="siterow" data-bulkscr="all"><span class="dot"></span><i data-lucide="globe"></i><b>All Websites</b><span class="mono">Try Each Until A Match</span></div>`:''}
      ${scrapers.map((s,i)=>`<div class="siterow scraper" data-bulkscr="${i}"><span class="dot"></span><i data-lucide="${s.type==='python'?'file-code':'file-json'}"></i><b>${esc(s.name)}</b><span class="mono">${s.type==='python'?'Python':'YAML'}</span></div>`).join('')||''}

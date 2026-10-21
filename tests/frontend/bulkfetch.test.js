@@ -23,6 +23,20 @@ function click(w, sel) {
   el.click();
 }
 
+test('toolbar bulk on performers shows the Info/Photo chooser (Get Photo not skipped)', () => {
+  const w = boot();
+  // regression: an eager op default made op==null unreachable and the
+  // performer chooser screen never appeared
+  w.openBulkFetchMenu('performers');
+  const title = w.document.getElementById('m-title-text').textContent;
+  assert.match(title, /Get Info Or Photo/, 'chooser screen shows first');
+  assert.ok(w.document.querySelector('.siterow[data-bfop="info"]'), 'Get Info option');
+  assert.ok(w.document.querySelector('.siterow[data-bfop="pic"]'), 'Get Photo option');
+  click(w, '.siterow[data-bfop="pic"]');
+  assert.match(w.document.getElementById('m-title-text').textContent, /Bulk Picture - Source/,
+    'choosing Get Photo lands on the picture source picker');
+});
+
 test('after one bulk run, picking a scraper with everything already fetched still starts (include fallback)', () => {
   const w = boot();
   // reopening as a second pass: include already-focused items deliberately
