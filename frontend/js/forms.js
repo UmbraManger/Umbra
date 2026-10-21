@@ -512,24 +512,26 @@ function bulkRunFetch(tab,itemsIn,op,scraperId){
    })();
   }}],0,560);
 }
-function openBulkFetchMenu(tab,includeDone,op){
+function openBulkFetchMenu(tab,includeDone=false,op=null){
  const kind=tab.slice(0,-1);
  const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,kind)&&s.enabled);
  const opLabel=x=>x==='pic'?'Picture':'Information';
  const isPerf=kind==='performer';
- if(!op)op='info';
+ if(op==null)op='info';
  const start=()=>{
   const items=bulkFetchItems(tab,op,includeDone);
   if(!items.length)return;
   modalSteps=null;closeModal();bulkRunFetch(tab,items,op,scraperIdNow);
  };
  let scraperIdNow;
- const pickScraper=scraperId=>{
-  const inc=!!$('#bf-inc')?.checked;
-  scraperIdNow=scraperId;
-  if(inc!==!!includeDone){modalSteps=null;closeModal();openBulkFetchMenu(tab,inc,op);return}
-  start();
- };
+  const pickScraper=scraperId=>{
+   // A missing checkbox means this screen already matches includeDone — reading
+   // it as false bounced the picker between screens forever instead of starting.
+   const c=$('#bf-inc'),inc=c?c.checked:!!includeDone;
+   scraperIdNow=scraperId;
+   if(inc!==!!includeDone){modalSteps=null;closeModal();openBulkFetchMenu(tab,inc,op);return}
+   start();
+  };
  const s1={title:()=>`Bulk Get ${opLabel(op)} - Choose Source`,html:()=>{
    const items=pendingItems(tab,op,includeDone);
    const doneCnt=DB[tab].length-items.length;
@@ -547,7 +549,7 @@ function openBulkFetchMenu(tab,includeDone,op){
     const idx=r.dataset.bulkscr;pickScraper(idx==='all'?null:scrapers[+idx].id);
    }));
   }};
- if(isPerf){
+ if(isPerf&&op==null){
   const s0={title:'Get Information Or Picture',html:()=>`
    <div class="cmsg" style="margin-bottom:14px">Performers. Choose What To Fetch (Counts Below Respect Your Selection / Already-Fetched Skips):</div>
    <div style="display:flex;flex-direction:column;gap:8px">
