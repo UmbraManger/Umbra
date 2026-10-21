@@ -41,7 +41,7 @@ function openShareDialog(){
  }
  const enabledPlats=platforms.filter(p=>!(sh.platforms&&!sh.platforms.includes(p.id)));
  const captionDefault=captionFor(enabledPlats[0]?.id||'x');
- openModal([{title:'Share '+kindLabel,html:()=>`
+ openModal([{title:'Share '+kindLabel,icon:'share-2',html:()=>`
   <div style="margin-bottom:16px">
    <label class="flab">Caption</label>
    <textarea class="field" id="sh-caption" rows="2" style="width:100%;resize:vertical">${esc(captionDefault)}</textarea>
@@ -301,7 +301,7 @@ function importCardHTML(c){
 function openImportModal(candidates){
  const pending=(candidates||[]).filter(c=>!c.imported);
  const done=(candidates||[]).filter(c=>c.imported);
- openModal([{title:'Import From Scan',html:()=>`
+ openModal([{title:'Import From Scan',icon:'import',html:()=>`
   <div class="cmsg" style="margin-bottom:14px">${pending.length} New File${pending.length===1?'':'s'} Found - ${done.length} Already Imported. Edit The Suggestions, Then Import Each One.</div>
   ${pending.map(importCardHTML).join('')||`<div class="empty" style="padding:34px 16px"><i data-lucide="inbox"></i><span>No New Files To Import.</span></div>`}
   ${done.length?`<div class="divider" style="display:flex;align-items:center;gap:12px;margin:20px 0 12px;color:var(--faint)"><span class="mono" style="font-size:9px;letter-spacing:.14em">Already Imported</span></div>

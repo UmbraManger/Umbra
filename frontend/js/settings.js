@@ -75,7 +75,7 @@ function renderSettings(){
      <button type="button" class="btn ${!(settings.gallery&&settings.gallery.size==='large')?'primary':''}" data-action="gl-size" data-v="small" id="gl-sz-small">Small</button>
      <button type="button" class="btn ${(settings.gallery&&settings.gallery.size)==='large'?'primary':''}" data-action="gl-size" data-v="large" id="gl-sz-large">Large</button>
     </div></div>
-   <button class="btn" data-action="gl-save" style="margin-top:14px"><i data-lucide="save"></i>Save Gallery Settings</button>
+   <button class="btn" data-action="gl-save" style="margin-top:14px"><i data-lucide="save"></i>Save</button>
    <p class="note" style="margin-top:12px">"Pictures To Fetch" Controls How Many Gallery Images The Scraper Downloads When You Update Scene Information — More Pictures Use More Storage. "Pictures To Display" Limits How Many Show In The Detail Page Gallery. Re-Run "Update Information" After Changing Fetch Count. Gallery Requires A Scraper That Supports It (e.g. Sweet Pornstars).</p></div>
   <div class="ssec"><div class="shead"><i data-lucide="camera"></i><h2>Screenshot</h2><span class="mono">Capture Settings</span></div>
    <div class="setline"><span>Resolution Scale</span>
@@ -90,7 +90,7 @@ function renderSettings(){
     </div></div>
    <div class="setline" id="ss-quality-row" style="${(settings.screenshot&&settings.screenshot.format)==='jpg'?'':'display:none'}"><span>JPEG Quality</span>
     <span class="stepper"><button type="button" data-action="ss-quality" data-d="-5" title="Decrease"><i data-lucide="minus"></i></button><span class="mono stv" id="ss-quality-v">${(settings.screenshot&&settings.screenshot.quality)||92}%</span><button type="button" data-action="ss-quality" data-d="5" title="Increase"><i data-lucide="plus"></i></button></span></div>
-   <button class="btn" data-action="ss-save" style="margin-top:14px"><i data-lucide="save"></i>Save Screenshot Settings</button>
+   <button class="btn" data-action="ss-save" style="margin-top:14px"><i data-lucide="save"></i>Save</button>
    <p class="note" style="margin-top:12px">Resolution Scale Controls Sharpness — 2x Is Default (Crisp On Most Screens), 3x Is Ultra-Sharp But Larger Files. PNG Is Lossless; JPEG Smaller But Lossy. Page Labels Stamp "PAGE X/Y" On Multi-Page Captures. Auto-Download Saves A Copy To Your Device Even When Using Native Share. Changes Apply To The Next Screenshot.</p></div>
   <div class="ssec"><div class="shead"><i data-lucide="share-2"></i><h2>Sharing</h2><span class="mono">Social Media</span></div>
    <div class="setline"><span>Include Watermark</span><label class="switch"><input type="checkbox" id="sh-wm" ${(sh.watermark!==false)?'checked':''}><span class="knob"></span></label></div>
@@ -107,7 +107,7 @@ function renderSettings(){
     <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;max-width:520px">
      ${[{id:'x',name:'X (Twitter)'},{id:'reddit',name:'Reddit'},{id:'telegram',name:'Telegram'}].map(p=>`<div><label class="flab" style="font-weight:400;font-size:11.5px">${p.name}</label><input class="field" id="sh-cap-${p.id}" value="${esc((sh.captions&&sh.captions[p.id])||'')}" placeholder="Hi Guys, This Is My Collection From {social}"></div>`).join('')}
     </div></div>
-   <button class="btn" data-action="sh-save" style="margin-top:14px"><i data-lucide="save"></i>Save Sharing Settings</button>
+   <button class="btn" data-action="sh-save" style="margin-top:14px"><i data-lucide="save"></i>Save</button>
    <p class="note" style="margin-top:12px">Select Which Social Platforms Appear In The Share Dialog. Each Can Have Its Own Default Caption — Leave One Blank To Fall Back To The Default Caption Above. Per-Kind Captions Override The Global Default. Placeholders: <span class="mono">{kind}</span> (Movie/Scene/Performer/Studio), <span class="mono">{name}</span> (Title Or Name), <span class="mono">{social}</span> (Performer's Twitter/Instagram — Blank If Unset), <span class="mono">{studio}</span> (Studio Name), <span class="mono">{year}</span> (Year), <span class="mono">{date}</span> (Date), <span class="mono">{desc}</span> (Description — First 100 Chars). Screenshot Is Captured Automatically.</p></div>
  </div>
  <div class="scat" id="cat-scraping"><div class="scat-head"><i data-lucide="search"></i><span>Scraping & Metadata</span></div>
@@ -139,7 +139,7 @@ function renderSettings(){
    <div style="margin-top:10px;max-width:520px"><label class="flab">Endpoint</label><input class="field" id="ai-endpoint" value="${esc(ai.endpoint)}" placeholder="https://.../v1"></div>
    <div style="margin-top:10px;max-width:520px"><label class="flab">API Key</label><input class="field" id="ai-key" type="password" value="${esc(ai.key)}" placeholder="Stored In The OS Credential Store"></div>
    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-    <button class="btn primary" data-action="ai-save"><i data-lucide="save"></i>Save AI Settings</button>
+    <button class="btn primary" data-action="ai-save"><i data-lucide="save"></i>Save</button>
     <button class="btn" data-action="ai-test"><i data-lucide="plug-zap"></i>Test Connection</button>
    </div>
    <p class="note" style="margin-top:12px">AI Appears As An Option Inside Every "Get Information" Dialog. With The Backend Running, Your API Key Is Stored In The Operating System's Credential Store - Never In The Backup Or Settings File - And Lookups Run Server-Side. Without It, Lookups Are Simulated Locally.</p></div>
@@ -183,7 +183,7 @@ function renderSettings(){
    <div class="proxygrid" id="px-authrow" style="${px.auth?'':'display:none'}"><input class="field" id="px-user" placeholder="Username" value="${esc(px.user)}"><input class="field" id="px-pass" type="password" placeholder="Password" value="${esc(px.pass)}"></div>
    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
     <button class="btn" data-action="proxy-detect"><i data-lucide="scan-eye"></i>Detect System Proxy</button>
-    <button class="btn primary" data-action="proxy-save"><i data-lucide="save"></i>Save Proxy Settings</button>
+    <button class="btn primary" data-action="proxy-save"><i data-lucide="save"></i>Save</button>
    </div>
    <p class="note" style="margin-top:12px">Supported Protocols: HTTP, HTTPS And SOCKS5. With The Backend Running, These Settings Are Used For Outgoing Scraper And Lookup Requests.</p></div>
  </div>
@@ -201,7 +201,7 @@ function renderSettings(){
    </div>
    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
     <button class="btn" data-action="cache-clear"><i data-lucide="eraser"></i>Clear Image Cache</button>
-    <button class="btn danger" data-action="cache-purge" ${encN?'':'disabled'}><i data-lucide="trash-2"></i>Delete All Protected Images</button>
+    <button class="btn danger" data-action="cache-purge" ${encN?'':'disabled'}><i data-lucide="trash-2"></i>Delete All</button>
    </div>
    <p class="note" style="margin-top:12px">Clear Image Cache Releases Preview Memory And Locks Protected Images Again. Delete All Protected Images Permanently Removes The Encrypted Copies From Storage. This Cannot Be Undone.</p></div>
   <div class="ssec"><div class="shead"><i data-lucide="folder-search"></i><h2>Scan Directories</h2><span class="mono">Local Media</span></div>
@@ -215,12 +215,12 @@ function renderSettings(){
   <div class="ssec"><div class="shead"><i data-lucide="wrench"></i><h2>Maintenance</h2><span class="mono">Tools</span></div>
    <div class="maintrow"><div><b>Check Duplicates</b><span class="mono">Movies · Scenes · Performers · Studios · Categories</span></div><button class="btn" data-action="dup-check"><i data-lucide="copy-x"></i>Run Check</button></div>
    <div class="maintrow"><div><b>Title-Case All Titles</b><span class="mono">Capitalize First Letter Of Each Word</span></div><button class="btn" data-action="title-case"><i data-lucide="case-upper"></i>Apply</button></div>
-   <div class="maintrow"><div><b>Clear Watch Positions</b><span class="mono">Reset Resume Points For All Movies & Scenes</span></div><button class="btn" data-action="pos-clear"><i data-lucide="history"></i>Clear Positions</button></div></div>
- </div>
- <div class="scat" id="cat-danger"><div class="scat-head"><i data-lucide="skull"></i><span>Danger Zone</span></div>
-  <div class="ssec"><div class="shead"><i data-lucide="skull"></i><h2>Danger Zone</h2></div>
-   <div class="maintrow"><div><b>Return To Default Settings</b><span class="mono">Reset Preferences · Library Is Kept</span></div><button class="btn" data-action="reset"><i data-lucide="history"></i>Return To Default Settings</button></div>
-   <div class="maintrow"><div><b>Clear All Data</b><span class="mono">Delete Library · Favorites · Encrypted Images · Settings</span></div><button class="btn danger" data-action="wipe"><i data-lucide="trash-2"></i>Clear All Data</button></div>
+    <div class="maintrow"><div><b>Clear Watch Positions</b><span class="mono">Reset Resume Points For All Movies & Scenes</span></div><button class="btn" data-action="pos-clear"><i data-lucide="history"></i>Clear</button></div></div>
+  </div>
+  <div class="scat" id="cat-danger"><div class="scat-head"><i data-lucide="skull"></i><span>Danger Zone</span></div>
+   <div class="ssec"><div class="shead"><i data-lucide="skull"></i><h2>Danger Zone</h2></div>
+    <div class="maintrow"><div><b>Return To Default Settings</b><span class="mono">Reset Preferences · Library Is Kept</span></div><button class="btn" data-action="reset"><i data-lucide="history"></i>Reset</button></div>
+    <div class="maintrow"><div><b>Clear All Data</b><span class="mono">Delete Library · Favorites · Encrypted Images · Settings</span></div><button class="btn danger" data-action="wipe"><i data-lucide="trash-2"></i>Clear All</button></div>
    <div style="margin-top:14px">
     ${[['movies','Movies'],['scenes','Scenes'],['performers','Performers'],['studios','Studios'],['categories','Categories']].map(([k,n])=>`<div class="maintrow"><div><b><i data-lucide="trash-2" style="width:14px;height:14px;vertical-align:-2px"></i> ${n}</b><span class="mono">Delete All ${n} · References Become Stale</span></div><button class="btn danger" data-action="clear-tab" data-tab="${k}"><i data-lucide="trash-2"></i>Clear ${n}</button></div>`).join('')}
     <p class="note" style="margin-top:8px">Clear Data For A Specific Tab Only. This Cannot Be Undone.</p>

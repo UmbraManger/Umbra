@@ -10,7 +10,7 @@ function mediaForm(kind,item){
   ?`<div class="fw"><label class="flab">Scenes</label><input class="field" id="ff-scenes" type="number" min="1" value="${item?.scenes||''}"></div>`
   :`<div class="fw"><label class="flab">Movie</label><div class="tagwrap"><div id="ff-movie"></div></div></div>`;
  const body=`
-  <button class="fetchbtn hide" id="fetchbtn" type="button"><i data-lucide="cloud-download"></i>Get Information<em>Title + Studio Required</em></button>
+   <button class="fetchbtn hide" id="fetchbtn" type="button"><i data-lucide="cloud-download"></i>Get Info<em>Title + Studio Required</em></button>
   <div class="fsec"><div class="fttl">Identity</div>
    <div class="fw"><label class="flab">Title *</label><input class="field" id="ff-title" value="${esc(item?.title||'')}" placeholder="${isMovie?'Movie Title':'Scene Title'}"></div>
    <div class="fw"><label class="flab">Studio *</label><div id="ff-studio"></div></div>
@@ -221,7 +221,7 @@ function performerForm(item){
  const editing=!!item;
  const R={};
  const body=`
-  <button class="fetchbtn hide" id="fetchbtn" type="button"><i data-lucide="cloud-download"></i>Get Information<em>Name Required</em></button>
+   <button class="fetchbtn hide" id="fetchbtn" type="button"><i data-lucide="cloud-download"></i>Get Info<em>Name Required</em></button>
   <div class="fsec"><div class="fttl">Identity</div>
    <div class="frow"><div class="fw"><label class="flab">Stage Name *</label><input class="field" id="pf-name" value="${esc(item?.name||'')}"></div>
    <div class="fw"><label class="flab">Aliases</label><input class="field" id="pf-alias" value="${esc(item?.aliases||'')}"></div></div>
@@ -284,11 +284,11 @@ function performerForm(item){
 function openPerformerFetchMenu(R,item,gender){
  const name=R.nameEl?.value?.trim()||item?.name||'';
  if(!name){$('#pf-name').classList.add('err');toast('Stage Name Is Required','alert-triangle');return}
- openModal([{title:'Get Information & Picture',html:()=>`
+ openModal([{title:'Get Info & Photo',icon:'user',html:()=>`
   <div class="cmsg" style="margin-bottom:14px">Choose What To Fetch For <b>"${esc(name)}"</b>.</div>
   <div style="display:flex;flex-direction:column;gap:8px">
-   <button class="btn" id="pf-fi" type="button"><i data-lucide="cloud-download"></i>Get Performer Information</button>
-   <button class="btn" id="pf-fp" type="button"><i data-lucide="user-round"></i>Update Performer Picture</button>
+   <button class="btn" id="pf-fi" type="button"><i data-lucide="cloud-download"></i>Info</button>
+   <button class="btn" id="pf-fp" type="button"><i data-lucide="user-round"></i>Photo</button>
   </div>`,
   footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`,
   mount(){icons();
@@ -300,12 +300,12 @@ function openPerformerPhotoModal(setPhoto,name,onDone){
  const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,'performer')&&s.enabled);
  if(!scrapers.length){toast('No Performer Scraper Enabled','alert-triangle');return}
  let chosen=null;
- openModal([{title:'Update Performer Picture',html:()=>`
+ openModal([{title:'Update Performer Photo',icon:'image',html:()=>`
   <div class="cmsg" style="margin-bottom:14px">Fetch A Fresh Picture For <b>"${esc(name)}"</b>.</div>
   <div style="display:flex;flex-direction:column;gap:8px">
    ${scrapers.map((s,i)=>`<div class="siterow scraper" data-scr="${i}"><span class="dot"></span><i data-lucide="${s.type==='python'?'file-code':'file-json'}"></i><b>${esc(s.name)}</b><span class="mono">${s.type==='python'?'Python':'YAML'}</span></div>`).join('')}
   </div>`,
-  footer:()=>`<span class="push"></span><button class="btn primary" id="pfpp-go" disabled>Fetch Picture<i data-lucide="user-round"></i></button>`,
+  footer:()=>`<span class="push"></span><button class="btn primary" id="pfpp-go" disabled>Fetch<i data-lucide="user-round"></i></button>`,
   mount(b,f){
    icons();
    $$('.siterow[data-scr]',b).forEach(r=>r.addEventListener('click',()=>{$$('.siterow',b).forEach(x=>x.classList.remove('on'));r.classList.add('on');chosen=scrapers[+r.dataset.scr];$('#pfpp-go',f).disabled=false}));
@@ -325,7 +325,7 @@ function openPerformerPhotoModal(setPhoto,name,onDone){
      modalSteps=null;closeModal();
     }catch(err){
      toast('Picture Fetch Failed: '+err.message,'alert-triangle');
-     $('#pfpp-go',f).disabled=false;$('#pfpp-go',f).innerHTML='Fetch Picture<i data-lucide="user-round"></i>';icons(f);
+     $('#pfpp-go',f).disabled=false;$('#pfpp-go',f).innerHTML='Fetch<i data-lucide="user-round"></i>';icons(f);
     }
    });
   }}],0,520);
@@ -449,12 +449,12 @@ function bulkRunFetch(tab,itemsIn,op,scraperId){
  const items=itemsIn.slice().sort((a,b)=>nameOf(a).localeCompare(nameOf(b)));
  const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,kind)&&s.enabled);
  const order=scraperId?scrapers.filter(s=>s.id===scraperId):scrapers;
- openModal([{title:`Bulk Get ${label}`,html:()=>`
-  <div class="cmsg" style="margin-bottom:14px">Fetching ${label} For ${items.length===1?'1 Item':items.length+' Items'} (alphabetically, sequentially) - This Can Take A While.</div>
-  <div style="max-height:320px;overflow:auto">
-  ${items.map((it,i)=>`<div class="siterow" id="bfr-${i}"><span class="dot"></span><b>${esc(nameOf(it))}</b><span class="mono" data-st style="color:var(--faint)">Queued</span></div>`).join('')}
-  </div>`,
-  footer:()=>`<span class="push"></span><span class="mono" id="bfr-sum">0/${items.length}</span> <button class="btn" data-mclose="1">Close</button>`,
+  openModal([{title:`Bulk Get ${label}`,icon:op==='pic'?'user-round':'cloud-download',html:()=>`
+   <div class="cmsg" style="margin-bottom:14px">Fetching ${label} For ${items.length===1?'1 Item':items.length+' Items'} (alphabetically, sequentially) - This Can Take A While.</div>
+   <div class="mprog" style="max-height:320px;overflow:auto">
+   ${items.map((it,i)=>`<div class="siterow" id="bfr-${i}"><span class="dot"></span><b>${esc(nameOf(it))}</b><span class="mono" data-st style="color:var(--faint)">Queued</span></div>`).join('')}
+   </div>`,
+   footer:()=>`<span class="push"></span><span class="mono" id="bfr-sum">0/${items.length}</span> <button class="btn" data-mclose="1">Close</button>`,
   mount(){
    (async()=>{
     let ok=0;
@@ -532,30 +532,30 @@ function openBulkFetchMenu(tab,includeDone=false,op=null){
    if(inc!==!!includeDone){modalSteps=null;closeModal();openBulkFetchMenu(tab,inc,op);return}
    start();
   };
- const s1={title:()=>`Bulk Get ${opLabel(op)} - Choose Source`,html:()=>{
-   const items=pendingItems(tab,op,includeDone);
-   const doneCnt=DB[tab].length-items.length;
-   return `
-   <div class="cmsg" style="margin-bottom:14px">Using <b>${opLabel(op)}</b> For ${items.length===1?'1 Item':items.length+' Items'}${doneCnt>0&&!bulkSel.active?` (${doneCnt} Already Have ${opLabel(op)} - Skipped)`:''}. ${isPerf?'The Runner Works Alphabetically.':'Pick How To Fetch: Go Through All Websites, Or Choose One Certain Scraper.'}</div>
-   ${doneCnt>0&&!bulkSel.active?`<label class="ckrow" style="margin-bottom:10px"><input type="checkbox" id="bf-inc" ${includeDone?'checked':''}>Include Items That Already Have ${opLabel(op)} (${doneCnt})</label>`:''}
-   <div style="display:flex;flex-direction:column;gap:8px">
-    ${!isPerf&&scrapers.length>1?`<div class="siterow" data-bulkscr="all"><span class="dot"></span><i data-lucide="globe"></i><b>Go Through All Websites</b><span class="mono">Try Each Until A Match</span></div>`:''}
-    ${scrapers.map((s,i)=>`<div class="siterow scraper" data-bulkscr="${i}"><span class="dot"></span><i data-lucide="${s.type==='python'?'file-code':'file-json'}"></i><b>${esc(s.name)}</b><span class="mono">${s.type==='python'?'Python':'YAML'}</span></div>`).join('')||''}
-   </div>`;
-  },
-  footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button>`,
-  mount(b){
-   $$('.siterow[data-bulkscr]',b).forEach(r=>r.addEventListener('click',()=>{
-    const idx=r.dataset.bulkscr;pickScraper(idx==='all'?null:scrapers[+idx].id);
-   }));
-  }};
- if(isPerf&&op==null){
-  const s0={title:'Get Information Or Picture',html:()=>`
-   <div class="cmsg" style="margin-bottom:14px">Performers. Choose What To Fetch (Counts Below Respect Your Selection / Already-Fetched Skips):</div>
-   <div style="display:flex;flex-direction:column;gap:8px">
-    <div class="siterow" data-bfop="info"><span class="dot"></span><i data-lucide="cloud-download"></i><b>Get Information (${pendingItems(tab,'info',includeDone).length})</b></div>
-    <div class="siterow" data-bfop="pic"><span class="dot"></span><i data-lucide="user-round"></i><b>Get Picture (${pendingItems(tab,'pic',includeDone).length})</b></div>
-   </div>`,
+ const s1={title:()=>`Bulk ${opLabel(op)} - Source`,icon:op==='pic'?'user-round':'cloud-download',html:()=>{
+    const items=pendingItems(tab,op,includeDone);
+    const doneCnt=DB[tab].length-items.length;
+    return `
+    <div class="cmsg" style="margin-bottom:14px">Bulk ${opLabel(op)} For ${items.length===1?'1 Item':items.length+' Items'}${doneCnt>0&&!bulkSel.active?` (${doneCnt} Already Filled - Skipped)`:''}. ${isPerf?'Runs Alphabetically.':'Run Through All Websites, Or Choose One Scraper.'}</div>
+    ${doneCnt>0&&!bulkSel.active?`<label class="ckrow" style="margin-bottom:10px"><input type="checkbox" id="bf-inc" ${includeDone?'checked':''}>Include Items That Already Have ${opLabel(op)} (${doneCnt})</label>`:''}
+    <div style="display:flex;flex-direction:column;gap:8px">
+     ${!isPerf&&scrapers.length>1?`<div class="siterow" data-bulkscr="all"><span class="dot"></span><i data-lucide="globe"></i><b>All Websites</b><span class="mono">Try Each Until A Match</span></div>`:''}
+     ${scrapers.map((s,i)=>`<div class="siterow scraper" data-bulkscr="${i}"><span class="dot"></span><i data-lucide="${s.type==='python'?'file-code':'file-json'}"></i><b>${esc(s.name)}</b><span class="mono">${s.type==='python'?'Python':'YAML'}</span></div>`).join('')||''}
+    </div>`;
+   },
+   footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button>`,
+   mount(b){
+    $$('.siterow[data-bulkscr]',b).forEach(r=>r.addEventListener('click',()=>{
+     const idx=r.dataset.bulkscr;pickScraper(idx==='all'?null:scrapers[+idx].id);
+    }));
+   }};
+  if(isPerf&&op==null){
+   const s0={title:'Get Info Or Photo',icon:'user',html:()=>`
+    <div class="cmsg" style="margin-bottom:14px">Choose What To Fetch For Performers (Counts Respect Your Selection And Already-Filled Skips):</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+     <div class="siterow" data-bfop="info"><span class="dot"></span><i data-lucide="cloud-download"></i><b>Get Info (${pendingItems(tab,'info',includeDone).length})</b></div>
+     <div class="siterow" data-bfop="pic"><span class="dot"></span><i data-lucide="user-round"></i><b>Get Photo (${pendingItems(tab,'pic',includeDone).length})</b></div>
+    </div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button>`,
    mount(b){
     $$('.siterow[data-bfop]',b).forEach(r=>r.addEventListener('click',()=>{

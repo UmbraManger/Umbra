@@ -2,7 +2,7 @@
 /* ===== UTILS ===== */
 // Bumping the release: mirror the version in index.html's title bar,
 // backend/server.py (FastAPI title + /api/ping) and backend/pyproject.toml.
-const APP_VERSION='1.2';
+const APP_VERSION='1.3';
 const $=(s,c=document)=>c.querySelector(s);
 const $$=(s,c=document)=>[...c.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -131,7 +131,7 @@ async function ensureKey(){
  if(encPending)return encPending;
  encPending=new Promise(res=>{
   let settled=false;
-  try{openModal([{title:'Image Protection - Passphrase',html:()=>`
+  try{openModal([{title:'Image Protection - Passphrase',icon:'lock',html:()=>`
    <div class="cmsg" style="margin-bottom:12px">Enter The Image Protection Passphrase To View Protected Images.</div>
    <input class="field" id="ip-pass" type="password" placeholder="Passphrase">`,
    footer:()=>`<span class="push"></span><button class="btn primary" id="ip-ok"><i data-lucide="unlock"></i>Unlock</button>`,

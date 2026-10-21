@@ -47,8 +47,8 @@ function renderAbout(){
     </div>
     <div class="ssec"><div class="shead"><i data-lucide="database"></i><h2>Data</h2></div>
      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px">
-      <button class="btn" data-action="export-data"><i data-lucide="download"></i>Export Library</button>
-      <button class="btn" data-action="clear-data"><i data-lucide="trash-2"></i>Clear All Data</button>
+       <button class="btn" data-action="export-data"><i data-lucide="download"></i>Export Library</button>
+       <button class="btn" data-action="clear-data"><i data-lucide="trash-2"></i>Clear All</button>
      </div>
      <p class="note" style="margin-top:16px">Umbra keeps everything in the local data folder and browser storage. Export regularly to keep backups - or use a full Settings › Storage backup whenever the backend is connected. Nothing ever leaves this machine unless you set up sync.</p>
     </div>

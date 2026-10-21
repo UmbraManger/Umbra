@@ -210,8 +210,8 @@ function dFilterPopHTML(){
 }
 function dToolbarHTML(){
  const n=dFilterCount(detailUI._pend);
- const add=[...detailUI.kinds].map(k=>`<button class="btn primary" data-daction="add" data-dkind="${k}"><i data-lucide="plus"></i>Add ${k==='movie'?'Movie':'Scene'}</button>`).join('')
-  ||`<button class="btn primary" data-daction="add" data-dkind="scene"><i data-lucide="plus"></i>Add Scene</button>`;
+  const add=[...detailUI.kinds].map(k=>`<button class="btn primary" data-daction="add" data-dkind="${k}" title="Add ${k==='movie'?'Movie':'Scene'}"><i data-lucide="plus"></i>Add</button>`).join('')
+   ||`<button class="btn primary" data-daction="add" data-dkind="scene" title="Add Scene"><i data-lucide="plus"></i>Add</button>`;
  return `<div class="toolbar">
   <div class="searchbox"><i data-lucide="search"></i><input placeholder="Search This Studio..." value="${esc(detailUI.q||'')}" data-drole="q"></div>
   <span class="fwrap2"><button class="btn" data-action="filter"><i data-lucide="sliders-horizontal"></i>Filter<span class="fbadge" data-drole="fbadge" ${n?'':'style="display:none"'}>${n}</span></button></span>
@@ -448,13 +448,13 @@ function renderDetail(kind,id){
    ${descHTML(kind,item,'margin:0 0 16px')?`<div class="flab">Description</div>${descHTML(kind,item,'margin:0 0 16px')}`:''}
    <div class="flab">Cast</div><div class="cast">${castChips(item,kind)||'<span class="dim" style="font-size:12.5px">No Cast Recorded.</span>'}</div>
    <div class="dacts">
-    <button class="btn ${item.fav?'fav-on':''}" data-action="toggle-fav" data-kind="${kind}" data-id="${item.id}"><i data-lucide="heart"></i>${item.fav?'In Favorites':'Add To Favorites'}</button>
-    <button class="btn" data-action="add-to-pl" data-kind="${kind}" data-id="${item.id}"><i data-lucide="list-plus"></i>Add To Playlist</button>
-    <button class="btn" data-action="edit"><i data-lucide="pencil"></i>Edit</button>
-    <button class="btn" data-action="fetch-menu"><i data-lucide="cloud-download"></i>Get Info &amp; Images</button>
-    <button class="btn" data-action="reveal"><i data-lucide="folder-open"></i>Show File Location</button>
-    <button class="btn" data-action="share"><i data-lucide="share-2"></i>Share</button>
-    <button class="btn danger" data-action="del"><i data-lucide="trash-2"></i>Delete</button>
+    <button class="btn ${item.fav?'fav-on':''}" data-action="toggle-fav" data-kind="${kind}" data-id="${item.id}" title="${item.fav?'In Favorites':'Add To Favorites'}"><i data-lucide="heart"></i>${item.fav?'Favorited':'Favorite'}</button>
+    <button class="btn" data-action="add-to-pl" data-kind="${kind}" data-id="${item.id}" title="Add This Item To A Playlist"><i data-lucide="list-plus"></i>Playlist</button>
+    <button class="btn" data-action="edit" title="Edit This Item"><i data-lucide="pencil"></i>Edit</button>
+    <button class="btn" data-action="fetch-menu" title="Get Info &amp; Images"><i data-lucide="cloud-download"></i>Get Info</button>
+    <button class="btn" data-action="reveal" title="Show File Location"><i data-lucide="folder-open"></i>Show File</button>
+    <button class="btn" data-action="share" title="Share"><i data-lucide="share-2"></i>Share</button>
+    <button class="btn danger" data-action="del" title="Delete"><i data-lucide="trash-2"></i>Delete</button>
    </div></div>`;
   const thumbSel=kind==='scene'&&(item.covers||[]).length>1
    ?`<span class="seg textseg"><button class="${(item.thumb||0)===0?'on':''}" data-action="set-thumb" data-i="0">Thumb A</button><button class="${(item.thumb||0)===1?'on':''}" data-action="set-thumb" data-i="1">Thumb B</button></span>`:'';
@@ -487,8 +487,8 @@ function renderDetail(kind,id){
    <div class="dmeta mono">${item.gender==='m'?'Male':'Female'}${item.aliases?' · AKA '+esc(item.aliases):''}</div>
    ${infoGrid('performer',item)}
     <div class="dacts">
-     <button class="btn" data-action="edit"><i data-lucide="pencil"></i>Edit</button>
-     <button class="btn" data-action="fetch-menu"><i data-lucide="cloud-download"></i>Get Information</button>
+      <button class="btn" data-action="edit" title="Edit This Performer"><i data-lucide="pencil"></i>Edit</button>
+      <button class="btn" data-action="fetch-menu" title="Get Information &amp; Picture"><i data-lucide="cloud-download"></i>Get Info</button>
      <button class="btn" data-action="share"><i data-lucide="share-2"></i>Share</button>
      <button class="btn danger" data-action="del"><i data-lucide="trash-2"></i>Delete</button>
     </div></div>`;

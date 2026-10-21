@@ -87,7 +87,7 @@ document.addEventListener('click',e=>{
    const ext=f.name.split('.').pop().toLowerCase();
    if(!['py','yml','yaml'].includes(ext)){toast('Only Python (.py) Or YAML (.yml/.yaml) Files','alert-triangle');return}
    if(!Sync.on){toast('Connect The App Backend To Install External Scrapers','alert-triangle');return}
-   openModal([{title:'Assign Scraper',html:()=>`
+   openModal([{title:'Assign Scraper',icon:'file-code',html:()=>`
     <div class="cmsg" style="margin-bottom:12px">Assign <b>${esc(f.name)}</b> To One Or More Content Types. Enabled Scrapers Appear As Sources In The "Get Information" Dialog For Those Kinds.</div>
     <div><label class="flab">Assign To</label><div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">${KIND_LIST.map(k=>`<label class="ckrow"><input type="checkbox" id="scr-k-${k}" ${k==='scene'?'checked':''}>${kindLabel(k)}</label>`).join('')}</div></div>
     ${ext==='py'?`<label class="ckrow" style="margin-top:12px"><input type="checkbox" id="scr-py-ok">I Understand This Python Scraper Executes As Local Code On This Machine</label>`:''}`,
@@ -141,7 +141,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
  }
  else if(act==='profile-tab'){state.profileTab=a.dataset.tab;renderProfile();icons()}
  else if(act==='pl-create'){
-  openModal([{title:'New Playlist',html:()=>`
+  openModal([{title:'New Playlist',icon:'list-plus',html:()=>`
    <label class="flab">Playlist Name</label><input class="field" id="pl-name" placeholder="My Playlist" autofocus>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="pl-ok"><i data-lucide="plus"></i>Create</button>`,
    mount(bl,f){$('#pl-name',bl).focus();$('#pl-ok',f||bl)?.addEventListener('click',()=>{
@@ -153,7 +153,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
  }
  else if(act==='pl-rename'){
   const plid=a.dataset.plid;const pls=settings.playlists||[];const pl=pls.find(p=>p.id===plid);if(!pl)return;
-  openModal([{title:'Rename Playlist',html:()=>`
+  openModal([{title:'Rename Playlist',icon:'pencil',html:()=>`
    <label class="flab">New Name</label><input class="field" id="pl-rn" value="${esc(pl.name)}">`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="pl-rn-ok"><i data-lucide="check"></i>Rename</button>`,
    mount(bl,f){$('#pl-rn',bl).focus();$('#pl-rn-ok',f||bl)?.addEventListener('click',()=>{
@@ -163,7 +163,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
  }
  else if(act==='pl-delete'){
   const plid=a.dataset.plid;const pls=settings.playlists||[];const pl=pls.find(p=>p.id===plid);if(!pl)return;
-  openModal([{title:'Delete Playlist',html:()=>`
+  openModal([{title:'Delete Playlist',icon:'trash-2',html:()=>`
    <div class="cmsg">Delete <b>"${esc(pl.name)}"</b>? Items Will Not Be Deleted From Your Library.</div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn danger" id="pl-del-ok"><i data-lucide="trash-2"></i>Delete</button>`,
    mount(bl,f){$('#pl-del-ok',f||bl)?.addEventListener('click',()=>{
@@ -177,7 +177,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   if(!pls.length){toast('Create A Playlist First — Profile > Playlists','list-music');return}
   const label=item.title||item.name;
   const kindField=kind==='movie'?'movieIds':'sceneIds';
-  openModal([{title:'Add To Playlist',html:()=>`
+  openModal([{title:'Add To Playlist',icon:'list-plus',html:()=>`
    <div class="cmsg" style="margin-bottom:14px">Add <b>"${esc(label)}"</b> To:</div>
    ${pls.map(pl=>{
     const inPl=(pl[kindField]||[]).includes(id);
@@ -252,7 +252,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
  else if(act==='bulk-delete'){
   const tab=state.view.tab;const ids=[...bulkSel.selected];if(!ids.length)return;
   const labels=ids.map(id=>{const item=byTabId(tab,id);return item?(item.title||item.name):''}).filter(Boolean);
-  openModal([{title:`Delete ${ids.length} ${tab.charAt(0).toUpperCase()+tab.slice(1)}`,html:()=>`
+  openModal([{title:`Delete ${ids.length} ${tab.charAt(0).toUpperCase()+tab.slice(1)}`,icon:'trash-2',html:()=>`
    <div class="cmsg" style="margin-bottom:12px">Permanently Delete <b>${ids.length}</b> Selected Item${ids.length===1?'':'s'}?${ids.length<=5?'<br>'+labels.map(l=>'&bull; '+esc(l)).join('<br>'):''}<br><span style="color:var(--danger)">This Cannot Be Undone.</span></div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn danger" id="bulk-del-ok"><i data-lucide="trash-2"></i>Delete ${ids.length}</button>`,
    mount(bl,f){
@@ -363,7 +363,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   const label=item.title||item.name;
   const hasFile=Sync.on&&(v.kind==='movie'||v.kind==='scene')&&item.filePath;
   const linked=v.kind==='movie'?DB.scenes.filter(s=>s.movieId===item.id).length:0;
-  openModal([{title:'Delete '+kindLabel(v.kind),html:()=>`
+  openModal([{title:'Delete '+kindLabel(v.kind),icon:'trash-2',html:()=>`
    <div class="cmsg" style="margin-bottom:12px">Permanently Delete <b>"${esc(label)}"</b>?${linked?`<br><span style="color:var(--danger)">${linked} Linked Scene${linked===1?'':'s'} Will Be Unlinked (Not Deleted).</span>`:''} This Cannot Be Undone.</div>
    ${hasFile?'<label class="ckrow"><input type="checkbox" id="del-file">Also Delete The Video File From Disk</label>':''}`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn danger" id="del-ok"><i data-lucide="trash-2"></i>Delete</button>`,
@@ -395,11 +395,11 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    const v=state.view;if(v.name!=='detail')return;
    if(v.kind==='performer'){
     const item=byId('performer',v.id);if(!item)return;
-    openModal([{title:'Get Information & Picture',
+    openModal([{title:'Get Info & Photo',icon:'user',
      html:()=>`<div class="cmsg" style="margin-bottom:14px">Choose What To Fetch For <b>"${esc(item.name)}"</b>.</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-       <button class="btn" data-action="perf-menu-info"><i data-lucide="cloud-download"></i>Get Performer Information</button>
-       <button class="btn" data-action="perf-menu-pic"><i data-lucide="user-round"></i>Update Performer Picture</button>
+       <button class="btn" data-action="perf-menu-info"><i data-lucide="cloud-download"></i>Info</button>
+       <button class="btn" data-action="perf-menu-pic"><i data-lucide="user-round"></i>Photo</button>
       </div>`,
      footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`,
      mount(){icons()}
@@ -407,12 +407,12 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
     return;
    }
    if(v.kind!=='movie'&&v.kind!=='scene')return;
-  openModal([{title:'Get Information & Images',
+  openModal([{title:'Get Info & Images',icon:'cloud-download',
    html:()=>`<div class="cmsg" style="margin-bottom:14px">Choose What To Fetch For This ${v.kind==='movie'?'Movie':'Scene'}.</div>
      <div style="display:flex;flex-direction:column;gap:8px">
-      <button class="btn" data-action="fetch-info"><i data-lucide="cloud-download"></i>Update Information</button>
-      <button class="btn" data-action="fetch-posters"><i data-lucide="image-plus"></i>${v.kind==='movie'?'Update Posters':'Update Cover'}</button>
-      ${v.kind==='scene'?`<button class="btn" data-action="fetch-gallery"><i data-lucide="images"></i>Fetch Gallery</button>`:''}
+      <button class="btn" data-action="fetch-info"><i data-lucide="cloud-download"></i>Update Info</button>
+      <button class="btn" data-action="fetch-posters"><i data-lucide="image-plus"></i>${v.kind==='movie'?'Posters':'Cover'}</button>
+      ${v.kind==='scene'?`<button class="btn" data-action="fetch-gallery"><i data-lucide="images"></i>Gallery</button>`:''}
      </div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`,
    mount(){icons()}
@@ -451,7 +451,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   if(!scrapers.length){toast('No Scene Scraper Enabled','alert-triangle');return}
   const glCount=(settings.gallery&&settings.gallery.count)||12;
   let chosen=null;
-  const s0={title:'Fetch Gallery',html:()=>`
+  const s0={title:'Fetch Gallery',icon:'images',html:()=>`
    <div class="cmsg" style="margin-bottom:14px">Fetch Gallery Images For <b>"${esc(item.title)}"</b></div>
    ${scrapers.map((s,i)=>`<div class="siterow scraper" data-scr="${i}"><span class="dot"></span><i data-lucide="${s.type==='python'?'file-code':'file-json'}"></i><b>${esc(s.name)}</b><span class="mono">${s.type==='python'?'Python':'YAML'}</span></div>`).join('')}
    <div style="margin-top:14px"><label class="flab">Direct URL (Optional)</label><input class="field" id="gl-url" placeholder="https://..." value="${esc(item.sourceUrl||'')}"></div>`,
@@ -472,10 +472,10 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
       if(!modalSteps||modalSteps[0]!==s0)return;
       if(!imgs.length){toast('No Gallery Found','alert-triangle');$('#gl-fetch-go',f).disabled=false;$('#gl-fetch-go',f).innerHTML='Fetch<i data-lucide="images"></i>';icons(f);return}
       // Step 2: show preview
-      modalSteps=[modalSteps[0],{title:`Gallery Preview (${imgs.length} Images)`,html:()=>`
+      modalSteps=[modalSteps[0],{title:`Gallery Preview (${imgs.length} Images)`,icon:'images',html:()=>`
        <div class="gallery-grid" style="margin-top:8px">${imgs.map((u,i)=>`<div class="gallery-item" data-idx="${i}"><img src="${esc(u)}" alt="Image ${i+1}" loading="lazy"></div>`).join('')}</div>
        <div class="mono dim" style="font-size:11px;margin-top:10px">${imgs.length} images found. Select which to keep.</div>`,
-       footer:()=>`<button class="btn" data-mclose="1"><i data-lucide="x"></i>Cancel</button><span class="push"></span><button class="btn primary" id="gl-apply"><i data-lucide="check"></i>Apply Gallery</button>`,
+       footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="gl-apply"><i data-lucide="check"></i>Apply Gallery</button>`,
        mount(b2,f2){
         icons(b2);
         $('#gl-apply',f2)?.addEventListener('click',()=>{
@@ -550,7 +550,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
  else if(act==='cache-purge'){
   const n=Object.keys(encStore).length;
   if(!n)return;
-  openModal([{title:'Delete All Protected Images',html:()=>`<div class="cmsg">This Permanently Deletes ${n} Encrypted Image Cop${n===1?'y':'ies'} From Storage. This Cannot Be Undone. Continue?</div>`,
+  openModal([{title:'Delete All Protected Images',icon:'trash-2',html:()=>`<div class="cmsg">This Permanently Deletes ${n} Encrypted Image Cop${n===1?'y':'ies'} From Storage. This Cannot Be Undone. Continue?</div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn danger" id="cp-purge"><i data-lucide="trash-2"></i>Delete All</button>`,
    mount(){$('#cp-purge').addEventListener('click',()=>{
     Object.keys(encStore).forEach(k=>delete encStore[k]);
@@ -577,7 +577,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    }catch(err){toast('Backup Failed: '+err.message,'alert-triangle')}
    a.disabled=false;
   };
-  openModal([{title:'Export Backup',html:()=>`
+  openModal([{title:'Export Backup',icon:'download',html:()=>`
    <div class="cmsg" style="margin-bottom:12px">Save A Complete Backup - Library Database, Protected Images, Scrapers And Settings. The AI API Key Is Never Included.</div>
    <label class="flab">Passphrase (Optional) - Encrypts The Backup File</label>
    <input class="field" id="bk-exp-pass" type="password" placeholder="Leave Empty For An Unencrypted .zip" autocomplete="new-password">`,
@@ -591,7 +591,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   const askPass=(prompt)=>new Promise(res=>{
    let settled=false;
    const done=v=>{if(settled)return;settled=true;res(v);closeModal()};
-   openModal([{title:'Backup Passphrase',html:()=>`
+   openModal([{title:'Backup Passphrase',icon:'key',html:()=>`
     <div class="cmsg" style="margin-bottom:12px">${prompt}</div>
     <input class="field" id="bk-pass-in" type="password" placeholder="Passphrase" autocomplete="off">`,
     footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="bk-pass-ok"><i data-lucide="unlock"></i>Continue</button>`,
@@ -628,7 +628,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
     busy(false);
     }
    };
-   openModal([{title:'Restore Backup',html:()=>`
+   openModal([{title:'Restore Backup',icon:'upload',html:()=>`
     <div class="cmsg" style="margin-bottom:12px">Restoring <b>"${esc(f.name)}"</b> Replaces The Current Library, Images, Scrapers And Settings With The Backup Contents. This Cannot Be Undone. Continue?</div>`,
     footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn danger" id="bk-rst"><i data-lucide="upload"></i>Restore</button>`,
     mount(){$('#bk-rst').addEventListener('click',async()=>{
@@ -648,7 +648,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   inp.click();
  }
  else if(act==='pos-clear'){
-  openModal([{title:'Clear Watch Positions',html:()=>`<div class="cmsg">This Removes All Resume Points. Movies And Scenes Will Start From The Beginning Next Time. Continue?</div>`,
+  openModal([{title:'Clear Watch Positions',icon:'history',html:()=>`<div class="cmsg">This Removes All Resume Points. Movies And Scenes Will Start From The Beginning Next Time. Continue?</div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn danger" id="pos-ok"><i data-lucide="history"></i>Clear Positions</button>`,
    mount(){$('#pos-ok').addEventListener('click',()=>{Positions.clearAll();closeModal();toast('Watch Positions Cleared','history')})}}],0,480);
  }
@@ -657,7 +657,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   const labels={movies:'Movies',scenes:'Scenes',performers:'Performers',studios:'Studios',categories:'Categories'};
   const label=labels[tab]||tab;
   const count=tab==='movies'?DB.movies.length:tab==='scenes'?DB.scenes.length:tab==='performers'?DB.performers.length:tab==='studios'?DB.studios.length:DB.categories.length;
-  openModal([{title:`Clear ${label}`,html:()=>`<div class="cmsg">This Permanently Deletes All ${count} ${label}. Related References (Like Cast Links) Will Remain But Point To Missing Entries. This Cannot Be Undone.</div>`,
+  openModal([{title:`Clear ${label}`,icon:'trash-2',html:()=>`<div class="cmsg">This Permanently Deletes All ${count} ${label}. Related References (Like Cast Links) Will Remain But Point To Missing Entries. This Cannot Be Undone.</div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn danger" id="ctab-ok"><i data-lucide="trash-2"></i>Clear ${label}</button>`,
    mount(){$('#ctab-ok').addEventListener('click',()=>{
     const arr=tab==='movies'?DB.movies:tab==='scenes'?DB.scenes:tab==='performers'?DB.performers:tab==='studios'?DB.studios:DB.categories;
@@ -839,7 +839,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   }
  }
  else if(act==='dir-add'){
-  openModal([{title:'Add Scan Directory',html:()=>`
+  openModal([{title:'Add Scan Directory',icon:'folder-plus',html:()=>`
    <label class="flab">Local Path</label>
    <div style="display:flex;gap:6px">
     <input class="field" id="ndir" placeholder="D:\\Media\\Movies" style="flex:1">
@@ -1060,7 +1060,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
          const src=kind==='movie'?it.posterF:kind==='scene'?((it.covers||[])[0]||''):it.photo||'';
          return `<div class="res" data-action="open" data-kind="${kind}" data-id="${it.id}">${mediaPh(src,kind==='scene'?'w':'',({movie:'film',scene:'clapperboard',performer:'user',studio:'building-2',category:'tag'})[kind]||'image')}<div><b>${esc(it.title||it.name)}</b><div class="mono">${kindLabel(kind)}</div></div><i data-lucide="arrow-up-right"></i></div>`}).join('')}
       </div>`).join('')}</div>`).join('');
-     openModal([{title:'Duplicate Check',html:()=>secs||`<div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:34px 0"><i data-lucide="badge-check" style="width:30px;height:30px;color:var(--accent)"></i><span class="cmsg">No Duplicates Found.</span></div>`,
+     openModal([{title:'Duplicate Check',icon:'copy-x',html:()=>secs||`<div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:34px 0"><i data-lucide="badge-check" style="width:30px;height:30px;color:var(--accent)"></i><span class="cmsg">No Duplicates Found.</span></div>`,
       footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Close</button>`}],0,620);
      icons();
     })
@@ -1081,7 +1081,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    return groups.length?{label,groups}:null;
   }).filter(Boolean);
   const total=sections.reduce((n,s)=>n+s.groups.length,0);
-  openModal([{title:'Duplicate Check',html:()=>total?`
+  openModal([{title:'Duplicate Check',icon:'copy-x',html:()=>total?`
    <div class="cmsg" style="margin-bottom:14px">${total} Duplicate Group${total===1?'':'s'} Found Across Movies, Scenes, Performers, Studios And Categories:</div>
    ${sections.map(s=>`<div style="margin-bottom:18px"><div class="flab">${s.label} - ${s.groups.reduce((n,g)=>n+g.length,0)} Items</div>
     ${s.groups.map(g=>`<div style="margin-bottom:12px">
@@ -1116,7 +1116,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
   saveSettings();toast('Proxy Settings Saved','globe');
  }
  else if(act==='reset'){
-  openModal([{title:'Return To Default Settings',html:()=>`<div class="cmsg">This Resets Theme, Advanced Colors, Data Sources, External Scrapers, Directories, Player, AI, Password, Image Protection, Cache And Proxy Settings To Their Defaults. Protected Image Copies Are Removed. Your Library Items Are Kept. Continue?</div>`,
+  openModal([{title:'Return To Default Settings',icon:'history',html:()=>`<div class="cmsg">This Resets Theme, Advanced Colors, Data Sources, External Scrapers, Directories, Player, AI, Password, Image Protection, Cache And Proxy Settings To Their Defaults. Protected Image Copies Are Removed. Your Library Items Are Kept. Continue?</div>`,
    footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn" id="rst-ok"><i data-lucide="history"></i>Return To Default Settings</button>`,
    mount(){$('#rst-ok').addEventListener('click',()=>{
     settings=JSON.parse(JSON.stringify(DEF_SETTINGS));
@@ -1128,7 +1128,7 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    })}}],0,520);
  }
  else if(act==='wipe'){
-  openModal([{title:'Clear All Data',html:()=>`
+  openModal([{title:'Clear All Data',icon:'trash-2',html:()=>`
    <div class="cmsg" style="margin-bottom:12px">This Permanently Deletes Everything: All Movies, Scenes, Performers, Studios, Categories, Favorites, Encrypted Images, Data Sources, Scrapers And Settings. This Cannot Be Undone.</div>
    <label class="flab">Type DELETE To Confirm</label>
    <input class="field" id="wipe-confirm" placeholder="Type DELETE" autocomplete="off">`,

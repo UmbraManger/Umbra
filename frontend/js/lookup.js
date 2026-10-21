@@ -8,7 +8,8 @@ function renderModal(mw){
  const s=modalSteps[modalIdx];
  $('#modal-root').innerHTML=`<div class="overlay" data-mclose="1"></div><div class="modal" ${mw?`style="--mw:${mw}px"`:''}>
   <div class="mhead">${modalIdx>0?`<button class="btn icon ghost" id="m-back" title="Back"><i data-lucide="arrow-left"></i></button>`:''}
-   <div class="mtitle"><span id="m-title-text">${esc(typeof s.title==='function'?s.title():s.title)}</span><span class="mstep mono">Step ${modalIdx+1}/${modalSteps.length}</span></div>
+   <div class="mtitle"><span class="micon"><i data-lucide="${s.icon||'circle-dot'}"></i></span><span id="m-title-text">${esc(typeof s.title==='function'?s.title():s.title)}</span></div>
+   ${modalSteps.length>1?`<span class="mstep mono">${modalIdx+1}/${modalSteps.length}</span>`:''}
    <button class="btn icon ghost" data-mclose="1"><i data-lucide="x"></i></button></div>
   <div class="mbody" id="m-body">${s.html()}</div>
   <div class="mfoot" id="m-foot">${s.footer?s.footer():'<span class="push"></span>'}</div></div>`;
@@ -58,7 +59,7 @@ function buildCompareStep(kind,m,ctx,sourceLabel){
  const cur=ctx.current||{};
  const curTitle=cur.title||ctx.title;
  const isPostersOnly=!!ctx.postersOnly;
- return {title:isPostersOnly?(kind==='movie'?'Update Posters - Compare':'Update Covers - Compare'):'Update Information - Compare',html:()=>{
+ return {title:isPostersOnly?(kind==='movie'?'Update Posters - Compare':'Update Covers - Compare'):'Update Info - Compare',icon:'git-compare',html:()=>{
    const posters=kind==='movie'?{a:m.posterF,b:m.posterB,la:'Front',lb:'Back'}:kind==='scene'?{a:(m.covers||[])[0],b:(m.covers||[])[1],la:'Cover Thumbnail',lb:'Cover Player'}:{a:m.photo,b:null,la:'Photo',lb:null};
    const curA=kind==='movie'?cur.posterF:kind==='scene'?(cur.covers||[])[0]:cur.photo;
    const curB=kind==='movie'?cur.posterB:kind==='scene'?(cur.covers||[])[1]:null;
@@ -81,7 +82,7 @@ function buildCompareStep(kind,m,ctx,sourceLabel){
    ${posters.b?`<figure class="pv ${curB&&curB===posters.b?'pv-cur':''}">${mediaPh(posters.b||'',kind!=='movie'?'w':'',pIcon)}<figcaption>${posters.lb}</figcaption></figure>`:''}
   </div>
   <label class="ckrow" style="margin-top:8px"><input type="checkbox" id="cmp-posters" checked>Replace ${kind==='movie'?'Posters':kind==='scene'?'Covers':'Photo'} With The Ones Shown Above</label>`;},
- footer:()=>`<span class="push"></span><button class="btn primary" id="cmp-apply"><i data-lucide="check"></i>Apply Selected</button>`,
+ footer:()=>`<span class="push"></span><button class="btn" data-mclose="1">Cancel</button><button class="btn primary" id="cmp-apply"><i data-lucide="check"></i>Apply Selected</button>`,
  mount(b,f){
   $('#cmp-apply',f).addEventListener('click',()=>{
    const out={title:m.title};
@@ -104,7 +105,7 @@ function openFetchModal(kind,ctx){
  const sites=(settings.sources[kind]||[]);
  const scrapers=settings.scrapers.filter(s=>kindHas(s.kind,kind)&&s.enabled);
  let chosen=null;
- const s0={title:'Get Information - Choose Source',html:()=>`
+ const s0={title:'Get Info - Source',icon:'cloud-download',html:()=>`
   <div class="cmsg" style="margin-bottom:14px">Pick A Source To Look Up <b>"${esc(ctx.title)}"</b> - Or Paste A Direct URL.${Sync.on?' <span class="dim">(Lookups Run On The Backend)</span>':''}</div>
   ${sites.length?sites.map((s,i)=>`<div class="siterow" data-site="${i}"><span class="dot"></span><b>${esc(s.name)}</b><span class="mono">${esc(s.url)}</span></div>`).join('')
    :`<div class="cmsg" style="margin-bottom:10px;color:var(--faint)">No ${kindLabel(kind)} Websites Added Yet - Add Them In Settings › Data Sources.</div>`}
@@ -124,9 +125,9 @@ function openFetchModal(kind,ctx){
     setTimeout(()=>{if(modalSteps&&modalSteps[modalIdx]===sSearch){modalIdx=2;renderModal()}},900);
    });
   }};
- const sSearch={title:'Searching...',html:()=>`<div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:40px 0"><i data-lucide="loader-2" class="spin" style="width:30px;height:30px;color:var(--accent)"></i><span class="mono" style="font-size:10px;letter-spacing:.16em;color:var(--muted)">Querying ${esc(chosen?chosen.s.name:'')}...</span></div>`,footer:()=>'<span class="push"></span>'};
+ const sSearch={title:'Searching...',icon:'loader-2',html:()=>`<div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:40px 0"><i data-lucide="loader-2" class="spin" style="width:30px;height:30px;color:var(--accent)"></i><span class="mono" style="font-size:10px;letter-spacing:.16em;color:var(--muted)">Querying ${esc(chosen?chosen.s.name:'')}...</span></div>`,footer:()=>'<span class="push"></span>'};
  const results=()=>{const n=1+hashStr(ctx.title)%2;return [0,1,2].slice(0,n+1).map(i=>mockResult(kind,ctx.title,i,chosen?chosen.s.name:'',ctx.gender))};
- const sResults={title:'Results',html:()=>`<div class="cmsg" style="margin-bottom:14px">${results().length} Matches For <b>"${esc(ctx.title)}"</b>${chosen?' On '+esc(chosen.s.name):''}:</div>${results().map((r,i)=>`
+ const sResults={title:'Results',icon:'list',html:()=>`<div class="cmsg" style="margin-bottom:14px">${results().length} Matches For <b>"${esc(ctx.title)}"</b>${chosen?' On '+esc(chosen.s.name):''}:</div>${results().map((r,i)=>`
    <div class="res" data-res="${i}">${mediaPh('',kind!=='movie'?'w':'',({movie:'film',scene:'clapperboard',performer:'user'})[kind]||'image')}<div><b>${esc(r.title)}</b><div class="mono">${kind==='performer'?(esc(r.ethnicity)+' · '+ftIn(r.height)):esc(r.studioName)+' · '+(kind==='movie'?esc(r.year):esc(fmtDate(r.date)))}</div></div><i data-lucide="chevron-right"></i></div>`).join('')}`,
   footer:()=>`<span class="push"></span>`,
   mount(b){$$('.res',b).forEach(r=>r.addEventListener('click',()=>{
@@ -146,7 +147,7 @@ function openAIFlow(kind,ctx){
  if(!ai.model.trim()){toast('Set A Model In AI Settings','alert-triangle');return}
  let _aiMemo=null;
  const aiResult=()=>(_aiMemo||(_aiMemo=mockResult(kind,ctx.title,'ai',AI_PROVIDERS[ai.provider]?.[0]||'AI',ctx.gender)));
- const sAIConf={title:'AI Assistant - Configure',html:()=>`
+ const sAIConf={title:'AI Assistant - Configure',icon:'bot',html:()=>`
   <div class="cmsg" style="margin-bottom:14px">The Assistant Will Look Up <b>"${esc(ctx.title)}"</b> And Prepare ${kindLabel(kind)} Metadata You Can Compare And Apply.</div>
   <div class="kv"><span class="kl">Provider</span><span class="kvs">${esc(AI_PROVIDERS[ai.provider]?.[0]||ai.provider)}</span></div>
   <div class="kv"><span class="kl">Model</span><span class="kvs">${esc(ai.model)}</span></div>
@@ -159,7 +160,7 @@ function openAIFlow(kind,ctx){
    if(Sync.on){backendAI(kind,ctx,$('#ai-instr')?$('#ai-instr').value.trim():'');return}
    modalIdx=1;renderModal();
   })}};
- const sAIThink={title:'AI Assistant - Thinking',html:()=>`
+ const sAIThink={title:'AI Assistant - Thinking',icon:'bot',html:()=>`
   <div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:40px 0">
    <i data-lucide="bot" class="spin" style="width:30px;height:30px;color:var(--accent)"></i>
    <span class="mono" id="ai-stage" style="font-size:10px;letter-spacing:.16em;color:var(--muted)">Parsing Request...</span>
@@ -175,7 +176,7 @@ function openAIFlow(kind,ctx){
     if(modalSteps&&modalSteps[modalIdx]===sAIThink){modalIdx=2;renderModal()}
    },1600);
   }};
- const sAIResult={title:'AI Result',html:()=>{
+ const sAIResult={title:'AI Result',icon:'bot',html:()=>{
   const r=aiResult();
   return `<div class="cmsg" style="margin-bottom:14px">The Assistant Prepared One Merged Record For <b>"${esc(ctx.title)}"</b>:</div>
    <div class="res">${mediaPh('',kind!=='movie'?'w':'',({movie:'film',scene:'clapperboard',performer:'user'})[kind]||'image')}<div><b>${esc(r.title)}</b><div class="mono">${esc(ai.model)} · AI Generated</div></div><i data-lucide="chevron-right"></i></div>

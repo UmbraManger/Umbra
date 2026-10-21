@@ -117,7 +117,7 @@ const Sync={
   }catch(e){}
  },
  unlockPrompt(){
-  openModal([{title:'Image Protection - Passphrase',html:()=>`
+   openModal([{title:'Image Protection - Passphrase',icon:'lock',html:()=>`
    <div class="cmsg" style="margin-bottom:12px">Enter The Image Protection Passphrase To View Protected Images.</div>
    <input class="field" id="bk-ip-pass" type="password" placeholder="Passphrase">`,
    footer:()=>`<span class="push"></span><button class="btn primary" id="bk-ip-ok"><i data-lucide="unlock"></i>Unlock</button>`,

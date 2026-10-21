@@ -45,8 +45,12 @@ test('ticking include then picking a scraper runs in one step (no screen ping-po
   assert.ok(cb, 'include checkbox present when items were skipped');
   cb.checked = true;
   click(w, '.siterow[data-bulkscr]');
-  const title = w.document.getElementById('m-title-text').textContent;
-  assert.match(title, /Bulk Get Picture/, 'run started after include flip');
+  // the include flip re-renders the source picker (not the choose-op screen),
+  // then picking again starts the run — no bounce loop
+  assert.match(w.document.getElementById('m-title-text').textContent, /Bulk Picture - Source/,
+    'include flip lands back on the source picker');
+  click(w, '.siterow[data-bulkscr]');
+  assert.match(w.document.getElementById('m-title-text').textContent, /Bulk Get Picture/, 'run started');
 });
 
 test('movies ping-pong checked too: include + pick runs without bouncing', () => {
@@ -58,6 +62,8 @@ test('movies ping-pong checked too: include + pick runs without bouncing', () =>
   assert.ok(cb, 'include checkbox present');
   cb.checked = true;
   click(w, '.siterow[data-bulkscr]');
-  const title = w.document.getElementById('m-title-text').textContent;
-  assert.match(title, /Bulk Get Information/, 'run started for movies too');
+  assert.match(w.document.getElementById('m-title-text').textContent, /Bulk Information - Source/,
+    'include flip lands back on the source picker');
+  click(w, '.siterow[data-bulkscr]');
+  assert.match(w.document.getElementById('m-title-text').textContent, /Bulk Get Information/, 'run started for movies too');
 });
