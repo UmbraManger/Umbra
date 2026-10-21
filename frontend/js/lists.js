@@ -86,7 +86,7 @@ function toolbarHTML(tab){
   // The tab name is the context, so buttons stay terse: "Add" enough (full
   // wording lives in the tooltip), icons carry the action.
   const addLabel=tab==='movies'?'Add Movie':tab==='scenes'?'Add Scene':tab==='performers'?'Add Performer':tab==='studios'?'Add Studio':'Add Category';
-  const bulkFetchBtn=(tab==='movies'||tab==='scenes'||tab==='performers')?`<button class="btn" data-action="bulk-fetch" title="Bulk Get Information For All Or Selected Items"><i data-lucide="cloud-download"></i>Bulk Info</button>`:'';
+  const bulkFetchBtn=(tab==='movies'||tab==='scenes'||tab==='performers')?`<button class="btn" data-action="bulk-fetch" title="Bulk Get Information For All Or Selected Items"><i data-lucide="cloud-download"></i>Get Info</button>`:'';
   return `<div class="toolbar">
    <div class="searchbox"><i data-lucide="search"></i><input placeholder="${cfg.ph}" value="${esc(t.q||'')}" data-role="q"></div>
    ${filterBtn}<div class="sp"><div id="bulkbar-slot">${bulkBarHTML(tab)}</div></div>${mediaCtrl}
