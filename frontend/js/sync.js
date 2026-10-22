@@ -65,9 +65,8 @@ const Sync={
     if(!settings.adv)settings.adv={accent:'',background:'',font:'',radius:null,border:'1'};
     applyTheme();applyAdvanced();
    }
-   await refreshScrapers();
-    await Positions.load();
-    render();
+   await Promise.all([refreshScrapers(),Positions.load()]);
+   render();
     // Deferred while the App Lock screen is up (lockApp picks it up after the
     // password clears) so entry never stacks two password prompts at once.
     if(!(settings.lock&&settings.lock.on))this.checkImageLock();

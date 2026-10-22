@@ -69,9 +69,17 @@ async function lockApp(){
    const j=await r.json().catch(()=>({}));
    if(r.ok&&!j.locked){
     // One entry gets you in: the same passphrase also opens the image vault
-    // when it matches; a 400 just falls back to the normal prompt after reload.
+    // when it matches; a 400 just falls back to the normal image prompt.
     await fetch('/api/images/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({passphrase:pass})}).catch(()=>{});
-    root.classList.remove('show');toast('Unlocked - app resumed','lock-open');location.reload();}
+    // Resume in place instead of a full reload: the app UI is already booted
+    // and hidden behind the card, so just reveal it and connect now.
+    root.classList.remove('show');
+    document.body.classList.remove('lock-boot');
+    toast('Unlocked - App Resumed','lock-open');
+    await Sync.init();
+    icons();
+    return;
+   }
    else if(j.locked){$('#lock-err').textContent='Set a passphrase in Settings first';}
    else{$('#lock-err').textContent=j.detail||'Wrong passphrase';}
    $('#lock-pass').value='';$('#lock-pass').focus();$('#lock-root').classList.add('shake');

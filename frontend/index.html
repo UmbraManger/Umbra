@@ -109,12 +109,17 @@
     }catch(e){}
     return _f(input,init);
    };
-   // The lock screen paints before the app loads: put the server's real look
-   // on the root as early as possible (hash-free settings GET; also rides
-   // through the app lock). Falls back to the stored look already painted.
-   if(window.__paintLook&&(window.__UMBRA_TOKEN||TK)){
-    _f('/api/settings').then(function(r){return r.ok?r.json():null})
-     .then(function(s){if(s)window.__paintLook(s)}).catch(function(){});
+   // The lock screen paints before the app loads: pull the server's real look
+   // (hash-free settings GET; also rides through the app lock). The bridge
+   // token only exists after pywebviewready, so without it we wait for that
+   // when the cookie/query token is missing. Falls back to the stored look.
+   if(window.__paintLook){
+    var paintServerLook=function(){
+     fetch('/api/settings').then(function(r){return r.ok?r.json():null})
+      .then(function(s){if(s)window.__paintLook(s)}).catch(function(){});
+    };
+    if(window.__UMBRA_TOKEN||TK)paintServerLook();
+    else window.addEventListener('pywebviewready',paintServerLook);
    }
   })();
  window.addEventListener('DOMContentLoaded',function(){
@@ -700,6 +705,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radiu
    stays invisible so a locked start never flashes the library, the toolbar,
    or the "unconnected" state behind the password dialog. */
 body.lock-boot>*:not(#lock-root):not(#drawer-root):not(#modal-root):not(#toast-root){visibility:hidden}
+body.lock-boot #titlebar{visibility:visible}
 .lockcard{width:360px;max-width:calc(100vw - 32px);text-align:center;border:1px solid var(--line2);border-radius:18px;background:var(--surface);padding:38px 34px 32px;box-shadow:var(--shadow)}
 .lockcard .bmark{width:52px;height:52px;margin:0 auto 16px;border-radius:14px}
 .lockcard .bmark svg{width:24px;height:24px}
