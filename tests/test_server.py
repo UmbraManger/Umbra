@@ -360,12 +360,27 @@ class AppLockTests(ServerCase):
 
     def test_lock_blocks_data_endpoints_and_reports_status(self):
         self.srv.crypto.set_locked(True)
-        for path in ("/api/library", "/api/movies", "/api/settings",
+        for path in ("/api/library", "/api/movies",
                      "/api/backup/settings", "/api/images/i00000000"):
             self.assertEqual(self.client.get(path, headers=self.h).status_code, 423, path)
         self.assertEqual(self.client.get("/api/ping", headers=self.h).status_code, 200)
         st = self.client.get("/api/images/status", headers=self.h).json()
         self.assertTrue(st["app_locked"])
+
+    def test_locked_settings_get_reaches_the_lock_screen(self):
+        # The lock screen paints the user's real theme/background: the hash-free
+        # settings GET rides through the lock (local host + valid token only),
+        # writes stay 423, and a tokenless GET can't have it.
+        self.client.put("/api/settings", json={"theme": "light"}, headers=self.h)
+        self.srv.crypto.set_locked(True)
+        r = self.client.get("/api/settings", headers=self.h)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["theme"], "light")
+        self.assertEqual(self.client.get("/api/settings").status_code, 403)
+        self.assertEqual(self.client.put("/api/settings", json={"theme": "dark"},
+                                         headers=self.h).status_code, 423)
+        self.assertEqual(self.client.get("/api/settings", headers=self.h).json()["theme"],
+                         "light")
 
     def test_password_lifecycle_wrong_rejected_right_opens(self):
         # first set: no stored hash yet -> any passphrase (>=4 chars) arms it

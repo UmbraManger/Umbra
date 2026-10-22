@@ -52,7 +52,13 @@ const Sync={
     }
     DB.studios=lib.studios||[];DB.categories=lib.categories||[];
    }
-   const st=lib&&lib.settings?lib.settings:null;
+   let st=lib&&lib.settings?lib.settings:null;
+   // While the app lock is up /api/library 423s, so the lock screen would
+   // never see the server's theme. GET /api/settings is allowed through
+   // precisely for this — fetch it as the fallback.
+   if(!(st&&Object.keys(st).length)){
+    try{const sr=await fetch('/api/settings');if(sr.ok)st=await sr.json()}catch(e){}
+   }
    if(st&&Object.keys(st).length){
     settings=mergeSettings(settings,st);
     if(!settings.catLimit)settings.catLimit=10;

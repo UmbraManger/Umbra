@@ -55,6 +55,16 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             if path in ("/api/ping", "/api/images/unlock", "/api/images/status",
                         "/api/lock", "/api/unlock"):
                 return await call_next(request)
+            # Settings GET rides through the lock so the lock screen itself can
+            # paint the user's real theme/background (it's hash-free public
+            # shape, and still host+token guarded). Every write stays 423.
+            if request.method == "GET" and path == "/api/settings":
+                host_hdr = (request.headers.get("host") or "").lower()
+                sent = request.headers.get(_TOKEN_HDR) or request.query_params.get("t") or ""
+                if (host_hdr.split(":")[0].strip("[]") in _LOCAL_HOSTS
+                        and sent and hmac.compare_digest(str(sent), API_TOKEN)):
+                    return await call_next(request)
+                return JSONResponse({"detail": "missing or invalid token"}, status_code=403)
             return JSONResponse({"detail": "locked — unlock with the passphrase in Settings"},
                                 status_code=423)
         host_hdr = (request.headers.get("host") or "").lower()
