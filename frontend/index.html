@@ -2,12 +2,9 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Umbra - Private Media Manager</title>
-<link rel="icon" href="img/favicon.png">
-<link href="fonts/fonts.css" rel="stylesheet">
-<script src="lucide.min.js"></script>
-<script src="modern-screenshot.min.js"></script>
+<!-- First thing in the document on purpose: the stored look has to be on
+     <html> before the parser reaches any blocking script or stylesheet, or
+     the window paints the stylesheet default for a frame or two first. -->
 <script>
 /* Paint the stored theme + custom background BEFORE the first frame: the app
    chain applies the saved look much later (state.js), so without this every
@@ -36,6 +33,12 @@
  window.__paintLook=paint;
 })();
 </script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Umbra - Private Media Manager</title>
+<link rel="icon" href="img/favicon.png">
+<link href="fonts/fonts.css" rel="stylesheet">
+<script src="lucide.min.js"></script>
+<script src="modern-screenshot.min.js"></script>
 <script>
 (function(){
  function show(msg){
