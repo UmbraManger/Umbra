@@ -67,21 +67,23 @@ async function lockApp(){
    const pass=$('#lock-pass').value;
    const r=await fetch('/api/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({passphrase:pass})});
    const j=await r.json().catch(()=>({}));
+   const btn=$('#lock-unlock');
    if(r.ok&&!j.locked){
     // One entry gets you in: the same passphrase also opens the image vault
     // when it matches; a 400 just falls back to the normal image prompt.
+    btn.disabled=true;btn.textContent='Unlocking...';
     await fetch('/api/images/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({passphrase:pass})}).catch(()=>{});
-    // Resume in place instead of a full reload: the app UI is already booted
-    // and hidden behind the card, so just reveal it and connect now.
+    // Connect BEFORE revealing anything: the card stays on screen while the
+    // library loads, so the app never shows up empty and then fills itself.
+    await Sync.init();
     root.classList.remove('show');
     document.body.classList.remove('lock-boot');
     toast('Unlocked - App Resumed','lock-open');
-    await Sync.init();
     icons();
     return;
    }
-   else if(j.locked){$('#lock-err').textContent='Set a passphrase in Settings first';}
-   else{$('#lock-err').textContent=j.detail||'Wrong passphrase';}
+   else if(j.locked){btn.disabled=false;btn.textContent='Unlock';$('#lock-err').textContent='Set a passphrase in Settings first';}
+   else{btn.disabled=false;btn.textContent='Unlock';$('#lock-err').textContent=j.detail||'Wrong passphrase';}
    $('#lock-pass').value='';$('#lock-pass').focus();$('#lock-root').classList.add('shake');
   });
   $('#lock-pass').focus();
@@ -116,6 +118,10 @@ function mountTitleBar(){
  });
 }
 mountTitleBar();
+// Belt and braces: if pywebviewready fired before this script was parsed (it
+// does on some engine versions), the listener below never runs and the bar
+// would stay hidden for the whole session. A few cheap retries cover that.
+[0,300,1200].forEach(t=>setTimeout(mountTitleBar,t));
 // pywebview injects its bridge with ExecuteScript AFTER the page has parsed, so
 // window.pywebview (and api.*) do not exist yet while our scripts run — mounting
 // at parse time always found nothing and the bar never appeared. 'pywebviewready'
