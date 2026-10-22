@@ -10,7 +10,7 @@ import sys, os, time, socket, threading, traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import uvicorn
-from server import app, API_TOKEN
+from server import app, API_TOKEN, APP_VERSION
 import db
 import crypto
 
@@ -140,7 +140,7 @@ def main():
         # mountTitleBar). easy_drag stays off — it would make every mousedown
         # in the app drag the window; dragging comes from .pywebview-drag-region.
         window = webview.create_window(
-            "Umbra", url + f"/?t={API_TOKEN}", width=1360, height=860,
+            f"Umbra {APP_VERSION}", url + f"/?t={API_TOKEN}", width=1360, height=860,
             min_size=(960, 640), frameless=True, easy_drag=False,
             js_api=controls, background_color=caption_colors()[0])
         controls._window = window

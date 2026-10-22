@@ -26,7 +26,8 @@ db.connect()
 # (schema incl. positions + column migrations lives in db._migrate)
 log = logging.getLogger("umbra")
 
-app = FastAPI(title="Umbra", version="1.4")
+APP_VERSION = "1.4"
+app = FastAPI(title="Umbra", version=APP_VERSION)
 
 # ---- security: per-run token + Host/Origin enforcement ----
 # Everything under /api/ requires the per-run token (header X-Umbra-Token or
@@ -161,7 +162,7 @@ def _to_db(kind, data, create=False):
     return rec
 
 @app.get("/api/ping")
-def ping(): return {"ok": True, "app": "Umbra", "version": "1.4"}
+def ping(): return {"ok": True, "app": "Umbra", "version": APP_VERSION}
 
 @app.get("/api/library")
 def library():

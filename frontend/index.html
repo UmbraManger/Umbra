@@ -19,7 +19,7 @@
  // round trip). Keep the page unpainted for that gap: the native window is
  // already brushed with the same chosen color, so there is nothing to see.
  r.classList.add('look-pending');
- setTimeout(function(){r.classList.remove('look-pending')},900);
+ setTimeout(function(){r.classList.remove('look-pending')},8000);
  const mix=(h,f)=>{const n=parseInt(h.slice(1),16);let R=(n>>16&255),G=(n>>8&255),B=(n&255);
   if(f<0){R*=(1+f);G*=(1+f);B*=(1+f)}else{R+=(255-R)*f;G+=(255-G)*f;B+=(255-B)*f}
   return '#'+[R,G,B].map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('')};
@@ -716,8 +716,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radiu
 /* Boot gate: until lockApp resolves the server lock state, the whole app UI
    stays invisible so a locked start never flashes the library, the toolbar,
    or the "unconnected" state behind the password dialog. */
-body.lock-boot>*:not(#lock-root):not(#drawer-root):not(#modal-root):not(#toast-root){visibility:hidden}
-body.lock-boot #titlebar{visibility:visible}
+body.lock-boot>*:not(#lock-root):not(#drawer-root):not(#modal-root):not(#toast-root):not(#titlebar){visibility:hidden}
 .lockcard{width:360px;max-width:calc(100vw - 32px);text-align:center;border:1px solid var(--line2);border-radius:18px;background:var(--surface);padding:38px 34px 32px;box-shadow:var(--shadow)}
 .lockcard .bmark{width:52px;height:52px;margin:0 auto 16px;border-radius:14px}
 .lockcard .bmark svg{width:24px;height:24px}
