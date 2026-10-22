@@ -13,17 +13,17 @@
    chain applies the saved look much later (state.js), so without this every
    start flashes the stylesheet's default dark ink before switching to the
    user's background - on the splash, and behind the lock screen. Mirrors
-   applyAdvanced()'s background math exactly. */
+   applyAdvanced()'s background math exactly, so __paintLook can also be fed
+   the server-side settings once they arrive. */
 (function(){
- try{
-  const s=JSON.parse(localStorage.getItem('obscura:v1')||'null');
+ const r=document.documentElement;
+ const mix=(h,f)=>{const n=parseInt(h.slice(1),16);let R=(n>>16&255),G=(n>>8&255),B=(n&255);
+  if(f<0){R*=(1+f);G*=(1+f);B*=(1+f)}else{R+=(255-R)*f;G+=(255-G)*f;B+=(255-B)*f}
+  return '#'+[R,G,B].map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('')};
+ function paint(s){
   if(!s)return;
-  const r=document.documentElement;
   if(s.theme)r.dataset.theme=s.theme;
   const a=s.adv||{};
-  const mix=(h,f)=>{const n=parseInt(h.slice(1),16);let R=(n>>16&255),G=(n>>8&255),B=(n&255);
-   if(f<0){R*=(1+f);G*=(1+f);B*=(1+f)}else{R+=(255-R)*f;G+=(255-G)*f;B+=(255-B)*f}
-   return '#'+[R,G,B].map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('')};
   if(a.accent)r.style.setProperty('--accent',a.accent);
   if(a.background){
    r.style.setProperty('--bg',a.background);
@@ -31,7 +31,9 @@
    r.style.setProperty('--surface',mix(a.background,0.04));
    r.style.setProperty('--surface2',mix(a.background,0.07));
   }
- }catch(e){}
+ }
+ try{paint(JSON.parse(localStorage.getItem('obscura:v1')||'null'))}catch(e){}
+ window.__paintLook=paint;
 })();
 </script>
 <script>
@@ -104,10 +106,17 @@
      }
      return _f(u,init);
     }
-   }catch(e){}
-   return _f(input,init);
-  };
- })();
+    }catch(e){}
+    return _f(input,init);
+   };
+   // The lock screen paints before the app loads: put the server's real look
+   // on the root as early as possible (hash-free settings GET; also rides
+   // through the app lock). Falls back to the stored look already painted.
+   if(window.__paintLook&&(window.__UMBRA_TOKEN||TK)){
+    _f('/api/settings').then(function(r){return r.ok?r.json():null})
+     .then(function(s){if(s)window.__paintLook(s)}).catch(function(){});
+   }
+  })();
  window.addEventListener('DOMContentLoaded',function(){
   setTimeout(function(){
    if(document.body&&!document.body.dataset.booted)show('App Did Not Finish Loading - The Script Block Is Incomplete. Make Sure The File Ends With </html> And Re-Copy The Whole Code.');
@@ -687,6 +696,10 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radiu
 @keyframes tout{to{opacity:0;transform:translateY(8px)}}
 #lock-root{position:fixed;inset:0;z-index:350;display:none;align-items:center;justify-content:center;background:var(--bg)}
 #lock-root.show{display:flex}
+/* Boot gate: until lockApp resolves the server lock state, the whole app UI
+   stays invisible so a locked start never flashes the library, the toolbar,
+   or the "unconnected" state behind the password dialog. */
+body.lock-boot>*:not(#lock-root):not(#drawer-root):not(#modal-root):not(#toast-root){visibility:hidden}
 .lockcard{width:360px;max-width:calc(100vw - 32px);text-align:center;border:1px solid var(--line2);border-radius:18px;background:var(--surface);padding:38px 34px 32px;box-shadow:var(--shadow)}
 .lockcard .bmark{width:52px;height:52px;margin:0 auto 16px;border-radius:14px}
 .lockcard .bmark svg{width:24px;height:24px}

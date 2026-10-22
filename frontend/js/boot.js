@@ -32,6 +32,10 @@ $('#main').addEventListener('click',e=>{const chk=e.target.closest('[data-bulk-i
  new MutationObserver(()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;sweep()})}).observe(document.documentElement,{childList:true,subtree:true});
 })();
 recoverInterruptedRekey();
+// App UI stays invisible until the lock state is resolved: booting on a locked
+// backend must never flash the library (or the unconnected state) behind the
+// password dialog. lockApp() removes the class on the first negative status.
+document.body.classList.add('lock-boot');
 render();
 if(settings.imgProt&&settings.imgProt.on)hydrateEncImages(document);
 lockApp();
@@ -39,13 +43,13 @@ document.body.dataset.booted='1';
 async function lockApp(){
   const root=$('#lock-root');
   const r=await fetch('/api/images/status').catch(()=>null);
-  if(!r||!r.ok)return;
+  if(!r||!r.ok){document.body.classList.remove('lock-boot');return;}
   const j=await r.json();
   // Server truth, not the client flag: while locked every data fetch 423s, so
   // a stale localStorage copy must not be able to skip this dialog. When the
   // app is NOT locked, hand off to the image-vault prompt (it was deferred
   // behind this screen) so entry never stacks two password prompts at once.
-  if(!j.app_locked){Sync.checkImageLock();return;}
+  if(!j.app_locked){document.body.classList.remove('lock-boot');Sync.checkImageLock();return;}
   root.classList.add('show');
   const panel=`<div class="lockcard">
    <div class="bmark"><i data-lucide="lock"></i></div>

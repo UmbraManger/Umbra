@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { JSDOM } = require('jsdom');
-const { createWindow } = require('./harness');
+const { createWindow, CHAIN } = require('./harness');
 
 // The pre-paint script is stripped by the shared harness, so evaluate it the
 // way a real browser does: read index.html, pull that <script> out, run it.
@@ -52,4 +52,37 @@ test('no stored settings leaves the stylesheet defaults untouched', () => {
   const r = boot(undefined);
   assert.equal(r.dataset.theme, undefined);
   assert.equal(r.style.getPropertyValue('--bg'), '');
+});
+
+test('paintLook is exposed for the head settings fetch (server look)', () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+    url: 'http://127.0.0.1/', runScripts: 'outside-only', pretendToBeVisual: true
+  });
+  dom.window.eval(SRC);
+  assert.equal(typeof dom.window.__paintLook, 'function');
+  dom.window.__paintLook({ theme: 'light', adv: { background: '#123456', accent: '#fff000' } });
+  const r = dom.window.document.documentElement;
+  assert.equal(r.dataset.theme, 'light');
+  assert.equal(r.style.getPropertyValue('--bg'), '#123456');
+});
+
+const settle = () => new Promise(res => setTimeout(res, 30));
+
+test('app UI stays hidden until the lock state resolves, then un-hides', async () => {
+  const w = createWindow();
+  await settle();
+  assert.equal(w.document.body.classList.contains('lock-boot'), false,
+    'a dead backend is no lock — the app must appear');
+});
+
+test('locked backend: boot hides the app and shows the lock card', async () => {
+  const j = async o => ({ ok: true, json: async () => o });
+  const w = createWindow(CHAIN, { fetch: async u => {
+    if (String(u).includes('/api/images/status')) return j({ app_locked: true });
+    return { ok: false, status: 423, json: async () => ({}) };
+  } });
+  await settle();
+  assert.equal(w.document.body.classList.contains('lock-boot'), true,
+    'no app UI may flash behind the password dialog');
+  assert.ok(w.document.querySelector('#lock-root.show .lockcard'), 'lock card rendered');
 });

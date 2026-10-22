@@ -21,8 +21,13 @@ const Sync={
  on:false,
  async init(){
   try{
+   // Booting on a locked vault: sync never engages — the lock screen is up,
+   // every data endpoint 423s, and unlocking reloads the page from scratch.
+   // (lockApp paints the screen with the server look via the head script.)
+   const lks=await fetch('/api/images/status');
+   if(lks.ok&&(await lks.json()).app_locked)return;
    const r=await fetch('/api/ping');
-   if(!r.ok)return;
+  if(!r.ok)return;
    const j=await r.json();
    if(!j||!j.ok)return;
    this.on=true;
@@ -52,13 +57,7 @@ const Sync={
     }
     DB.studios=lib.studios||[];DB.categories=lib.categories||[];
    }
-   let st=lib&&lib.settings?lib.settings:null;
-   // While the app lock is up /api/library 423s, so the lock screen would
-   // never see the server's theme. GET /api/settings is allowed through
-   // precisely for this — fetch it as the fallback.
-   if(!(st&&Object.keys(st).length)){
-    try{const sr=await fetch('/api/settings');if(sr.ok)st=await sr.json()}catch(e){}
-   }
+   const st=lib&&lib.settings?lib.settings:null;
    if(st&&Object.keys(st).length){
     settings=mergeSettings(settings,st);
     if(!settings.catLimit)settings.catLimit=10;
