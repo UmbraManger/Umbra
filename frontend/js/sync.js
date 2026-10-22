@@ -21,9 +21,9 @@ const Sync={
  on:false,
  async init(){
   try{
-   // Booting on a locked vault: sync never engages — the lock screen is up,
-   // every data endpoint 423s, and unlocking reloads the page from scratch.
-   // (lockApp paints the screen with the server look via the head script.)
+   // Booting on a locked vault: sync never engages — the lock screen is up and
+   // every data endpoint 423s. Unlocking calls Sync.init() again in place. The
+   // lock screen paints with the server look via the head script.
    const lks=await fetch('/api/images/status');
    if(lks.ok&&(await lks.json()).app_locked)return;
    const r=await fetch('/api/ping');
@@ -71,6 +71,7 @@ const Sync={
     // password clears) so entry never stacks two password prompts at once.
     if(!(settings.lock&&settings.lock.on))this.checkImageLock();
    toast('Backend Connected - Library Loaded','database');
+   window.__bootLog&&window.__bootLog.snap('sync-done',{on:this.on});
   }catch(e){/* no backend - standalone demo mode */}
  },
  // Outgoing write queue: pushes retry transient failures with backoff instead

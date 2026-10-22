@@ -45,12 +45,14 @@ async function lockApp(){
   const r=await fetch('/api/images/status').catch(()=>null);
   if(!r||!r.ok){document.body.classList.remove('lock-boot');return;}
   const j=await r.json();
+  window.__bootLog&&window.__bootLog.snap('lock-status',{locked:!!j.app_locked});
   // Server truth, not the client flag: while locked every data fetch 423s, so
   // a stale localStorage copy must not be able to skip this dialog. When the
   // app is NOT locked, hand off to the image-vault prompt (it was deferred
   // behind this screen) so entry never stacks two password prompts at once.
   if(!j.app_locked){document.body.classList.remove('lock-boot');Sync.checkImageLock();return;}
   root.classList.add('show');
+  window.__bootLog&&window.__bootLog.snap('lock-shown');
   const panel=`<div class="lockcard">
    <div class="bmark"><i data-lucide="lock"></i></div>
    <h1>App Locked</h1>

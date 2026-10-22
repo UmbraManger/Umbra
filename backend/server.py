@@ -56,10 +56,12 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             if path in ("/api/ping", "/api/images/unlock", "/api/images/status",
                         "/api/lock", "/api/unlock"):
                 return await call_next(request)
-            # Settings GET rides through the lock so the lock screen itself can
-            # paint the user's real theme/background (it's hash-free public
-            # shape, and still host+token guarded). Every write stays 423.
-            if request.method == "GET" and path == "/api/settings":
+            # Settings GET and boot telemetry ride through the lock so the lock
+            # screen itself can paint the user's real theme/background and a
+            # launch problem stays diagnosable (both hash-free, host+token
+            # guarded). Every other write stays 423.
+            if ((path == "/api/settings" and request.method == "GET")
+                    or (path == "/api/clientlog" and request.method == "POST")):
                 host_hdr = (request.headers.get("host") or "").lower()
                 sent = request.headers.get(_TOKEN_HDR) or request.query_params.get("t") or ""
                 if (host_hdr.split(":")[0].strip("[]") in _LOCAL_HOSTS
@@ -319,6 +321,24 @@ def _public_settings() -> dict:
 
 @app.get("/api/settings")
 def get_settings(): return _public_settings()
+
+@app.post("/api/clientlog")
+def clientlog(entry: dict = Body(...)):
+    """Startup telemetry: the client posts its boot timeline so a 'flash on
+    launch' report can be diagnosed from the actual sequence of states instead
+    of guesses. Appends one JSON line per boot, capped so it can't grow."""
+    path = os.path.join(db.DATA_DIR, "bootlog.txt")
+    try:
+        if os.path.exists(path) and os.path.getsize(path) > 400_000:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                tail = f.readlines()[-200:]
+            with open(path, "w", encoding="utf-8") as f:
+                f.writelines(tail)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"at": time.strftime("%Y-%m-%d %H:%M:%S"), **entry}) + "\n")
+    except Exception:
+        pass
+    return {"ok": True}
 
 @app.put("/api/settings")
 def put_settings(body: dict = Body(...)):

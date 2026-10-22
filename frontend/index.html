@@ -37,6 +37,32 @@
  }
  try{paint(JSON.parse(localStorage.getItem('obscura:v1')||'null'))}catch(e){}
  window.__paintLook=paint;
+ // Boot timeline: records what the window actually shows, in order, and posts
+ // it to the server once the lock screen is up (data/bootlog.txt). This is how
+ // launch glitches get diagnosed from facts instead of guesses.
+ (function(){
+  const t0=performance.now(),marks=[];
+  let stored=null;try{stored=JSON.parse(localStorage.getItem('obscura:v1')||'null')}catch(e){}
+  const snap=(tag,extra)=>{
+   if(marks.length>240)return;
+   const h=document.documentElement,b=document.body;
+   marks.push(Object.assign({
+    t:Math.round(performance.now()-t0),tag,
+    cls:h.className,theme:h.dataset.theme,bg:h.style.getPropertyValue('--bg'),
+    lock:(h.querySelector&&h.querySelector('#lock-root')||{}).className||'',
+    body:b?b.className:'',
+    vis:b?getComputedStyle(b).visibility:''
+   },extra||{}));
+  };
+  snap('parse',{lsBg:!!(stored&&stored.adv&&stored.adv.background),lsTheme:stored&&stored.theme});
+  try{
+   new MutationObserver(muts=>{if(muts.length)snap('mut')}).observe(r,{attributes:true,attributeFilter:['class','style','data-theme'],subtree:true});
+  }catch(e){}
+  [40,120,300,700,1500,3000].forEach(t=>setTimeout(()=>snap('t+'+t),t));
+  setTimeout(()=>{try{fetch('/api/clientlog',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ua:navigator.userAgent,marks})})}catch(e){}},4000);
+  window.__bootLog={snap,get marks(){return marks}};
+ })();
 })();
 </script>
 <style>html.look-pending body{visibility:hidden}html.look-pending #titlebar{visibility:visible}</style>
@@ -124,11 +150,13 @@
    // token only exists after pywebviewready, so without it we wait for that
    // when the cookie/query token is missing. Falls back to the stored look.
    if(window.__paintLook){
+    var blog=window.__bootLog||{snap:function(){}};
     var paintServerLook=function(){
+     blog.snap('s-fetch',{tk:!!(window.__UMBRA_TOKEN||TK)});
      fetch('/api/settings').then(function(r){return r.ok?r.json():null})
-      .then(function(s){if(s)window.__paintLook(s)})
-      .catch(function(){})
-      .then(function(){document.documentElement.classList.remove('look-pending')});
+      .then(function(s){blog.snap('s-res',{ok:!!s,theme:s&&s.theme,bg:!!(s&&s.adv&&s.adv.background)});if(s)window.__paintLook(s)})
+      .catch(function(){blog.snap('s-err')})
+      .then(function(){document.documentElement.classList.remove('look-pending');blog.snap('s-reveal')});
     };
     if(window.__UMBRA_TOKEN||TK)paintServerLook();
     else window.addEventListener('pywebviewready',paintServerLook);
