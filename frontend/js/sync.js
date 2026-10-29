@@ -259,6 +259,12 @@ async function backendFetch(kind,ctx,chosen,url){
   if(raw&&(raw.notFound||raw.error))throw new Error(raw.error||'No Match Found');
   const m=normResult(kind,raw);
   if(!m)throw new Error('Empty Result');
+  /* By-name lookups must actually match, like the bulk flow: without this the
+     top scraper search result is applied even when it is a different item. */
+  if(!url&&titleCoverage(ctx.title,m.title||'')<0.6){
+   toast('No Confident Match For "'+ctx.title+'" (Got "'+(m.title||'')+'")','alert-triangle');
+   modalIdx=0;renderModal();return;
+  }
   if(!modalSteps||modalSteps.length<1){closeModal();return}
   const step=buildCompareStep(kind,m,ctx,chosen.s.name);
   modalSteps=[modalSteps[0],step];modalIdx=1;renderModal();
