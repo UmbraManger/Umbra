@@ -472,7 +472,7 @@ function bulkRunFetch(tab,itemsIn,op,scraperId){
         const raww=await rw.json();
         if(!(raww&&(raww.notFound||raww.error))){
          const mw=normResult(kind,raww);
-         if(mw&&titleCoverage(nameOf(it),mw.title||mw.name||'')>=0.6){try{applyFetchTo(kind,it,mw,true)}catch(e){reason='Apply Failed'}done=true}
+         if(mw&&fetchCoverage(nameOf(it),mw.title||mw.name||'')>=0.6){try{applyFetchTo(kind,it,mw,true)}catch(e){reason='Apply Failed'}done=true}
         }
        }
       }catch(e){}
@@ -493,7 +493,7 @@ function bulkRunFetch(tab,itemsIn,op,scraperId){
        }
        // wrong-scrape guard: a broad site search (Brazzers etc.) must not hijack
        // the item with a low-coverage title
-       if(titleCoverage(nameOf(it),m.title||m.name||'')<0.6){reason='Low Match';continue}
+       if(fetchCoverage(nameOf(it),m.title||m.name||'')<0.6){reason='Low Match';continue}
        try{applyFetchTo(kind,it,m,true)}catch(e){reason='Apply Failed';continue}
        done=true;break;
       }catch(err){reason=err.message||'Error'}

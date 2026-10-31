@@ -49,3 +49,16 @@ test('single fetch with a pasted URL skips the title coverage check', async () =
   assert.match(w.document.getElementById('m-title-text').textContent, /Compare/,
     'by-URL lookup applies exactly that page');
 });
+
+test('fetchCoverage accepts the "Performers - Title" naming', () => {
+  const w = boot({ title: 'x', covers: [] });
+  const q = 'Anna Claire Clouds, Angela White - Big Ass Dp';
+  // the plain coverage fails against the whole name string...
+  assert.ok(w.eval(`titleCoverage(${JSON.stringify(q)}, 'Big Ass DP') < 0.6`),
+    'plain coverage on the full name is genuinely low');
+  // ...but the naming-aware check measures the title part too
+  assert.ok(w.eval(`fetchCoverage(${JSON.stringify(q)}, 'Big Ass DP') >= 0.6`),
+    'title part of the naming convention passes');
+  assert.ok(w.eval(`fetchCoverage(${JSON.stringify(q)}, 'Completely Different Movie') < 0.6`),
+    'unrelated results are still refused');
+});

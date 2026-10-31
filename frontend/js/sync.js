@@ -220,6 +220,18 @@ function titleCoverage(q,t){
  if(!a.length)return 0;
  return a.filter(x=>b.has(x)).length/a.length;
 }
+/* 'Performers - Title' naming ('Anna Claire Clouds - Big Ass Dp'): the scraped
+   item only carries the title part, so also accept coverage measured on it. */
+function fetchCoverage(q,t){
+ let c=titleCoverage(q,t);
+ const parts=String(q||'').split(/\s+[-\u2013\u2014]\s+/);
+ if(parts.length>1){
+  const names=parts[0].split(',').map(s=>s.trim());
+  if(names.length&&names.length<=5&&names.every(n=>n&&!/\d/.test(n)&&/^[A-Za-z .'\u2019-]+$/.test(n)))
+   c=Math.max(c,titleCoverage(parts.slice(1).join(' - '),t));
+ }
+ return c;
+}
 function normResult(kind,d){
  if(!d||typeof d!=='object')return null;
  const g={...d};
@@ -261,7 +273,7 @@ async function backendFetch(kind,ctx,chosen,url){
   if(!m)throw new Error('Empty Result');
   /* By-name lookups must actually match, like the bulk flow: without this the
      top scraper search result is applied even when it is a different item. */
-  if(!url&&titleCoverage(ctx.title,m.title||'')<0.6){
+  if(!url&&fetchCoverage(ctx.title,m.title||'')<0.6){
    toast('No Confident Match For "'+ctx.title+'" (Got "'+(m.title||'')+'")','alert-triangle');
    modalIdx=0;renderModal();return;
   }
