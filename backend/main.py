@@ -94,6 +94,22 @@ class _WinControls:
         if self._window:
             self._window.destroy()
 
+    def pick_save(self, name):
+        """Native save dialog for exports — the page renders the window, so it
+        has no browser-style download picker of its own. Returns '' when the
+        user cancels or no window exists (debug browser mode)."""
+        w = self._window
+        if not w:
+            return ""
+        try:
+            import webview
+            res = w.create_file_dialog(webview.SAVE_DIALOG, save_filename=str(name or ""))
+            if isinstance(res, str):
+                return res
+            return (res[0] if res else "") or ""
+        except Exception:
+            return ""
+
 def main():
     # Re-arm the app lock from the stored settings BEFORE serving anything,
     # so a password set in the last session locks this start too.

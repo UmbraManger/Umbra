@@ -73,7 +73,7 @@ class WinControlsTests(_MainCase):
         (evaluate_js, destroy, ...) into the page."""
         c = _main._WinControls()
         public = {n for n in dir(c) if not n.startswith("_")}
-        self.assertEqual(public, {"minimize", "toggle_max", "resize_to", "close"})
+        self.assertEqual(public, {"minimize", "toggle_max", "resize_to", "close", "pick_save"})
 
     def test_minimize_and_close_reach_the_window(self):
         c = self.controls()

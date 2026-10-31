@@ -1,5 +1,31 @@
 "use strict";
 /* ===== GLOBAL EVENTS ===== */
+/* ===== BACKUP PROGRESS =====
+   Poll the engine's progress while an export/restore request is in flight;
+   the modal dies with the request (closeModal() clears the interval). */
+function openBkProgress(title,label){
+ openModal([{title,icon:'download',html:()=>`
+  <div class="cmsg" style="margin-bottom:14px" data-bkmsg>${esc(label||'Working...')}</div>
+  <div style="height:8px;background:var(--bg2);border-radius:5px;overflow:hidden"><div data-bkbar style="width:0%;height:100%;background:var(--accent);transition:width .25s"></div></div>`,
+  footer:()=>'<span class="push"></span>'}],0,480);
+ const poll=setInterval(async()=>{
+  const bar=document.querySelector('[data-bkbar]'),msg=document.querySelector('[data-bkmsg]');
+  if(!bar||!msg){clearInterval(poll);return}
+  try{
+   const r=await fetch('/api/backup/progress');const j=await r.json();
+   if(j&&j.total>0){
+    bar.style.width=Math.min(100,Math.round(j.done/j.total*100))+'%';
+    msg.textContent=j.phase==='stage'?'Restoring - Staging Files...':j.phase==='apply'?'Restoring - Applying...':'Generating Backup...';
+   }
+  }catch(e){}
+ },400);
+ return {stop(){clearInterval(poll)},set(pct,msg){
+  const bar=document.querySelector('[data-bkbar]'),m=document.querySelector('[data-bkmsg]');
+  if(bar)bar.style.width=Math.min(100,Math.round(pct))+'%';
+  if(m&&msg)m.textContent=msg;
+ }};
+}
+
 function applyFetchTo(kind,item,u,quiet){
  if(u.title!=null)item.title=titleCase(u.title);
  for(const k of ['year','date','durationMin','scenes','desc','birth','height','weight','careerStart','gender','boobs','twitter','instagram','onlyfans'])if(u[k]!=null)item[k]=u[k];
@@ -561,20 +587,39 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    })}}],0,520);
  }
  else if(act==='bk-export'){
+  const stamp=()=>{const d=new Date();const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())};
   const doExport=async(pass)=>{
    a.disabled=true;
+   // Native save dialog: without it the zip silently lands wherever the
+   // webview's download folder is and nobody knows where the backup went.
+   let dst='';
    try{
-    const r=await fetch('/api/backup/export'+(pass?'?passphrase='+encodeURIComponent(pass):''));
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    const blob=await r.blob();
-    const m=/filename="?([^";]+)"?/.exec(r.headers.get('Content-Disposition')||'');
-    const u=URL.createObjectURL(blob);
-    const link=document.createElement('a');
-    link.href=u;link.download=m?m[1]:'Umbra-Backup.zip';
-    document.body.appendChild(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(u),4000);
-    toast(pass?'Encrypted Backup Exported':'Backup Exported','download');
+    if(window.pywebview&&window.pywebview.api&&typeof window.pywebview.api.pick_save==='function')
+     dst=await window.pywebview.api.pick_save('Umbra-Backup-'+stamp()+'.zip')||'';
+   }catch(e){dst=''}
+   let prog=null;
+   try{
+    if(dst){
+     prog=openBkProgress('Export Backup','Generating Backup...');
+     const r=await fetch('/api/backup/export?path='+encodeURIComponent(dst)+(pass?'&passphrase='+encodeURIComponent(pass):''));
+     const j=await r.json().catch(()=>({}));
+     if(!r.ok)throw new Error(j.detail||('HTTP '+r.status));
+     toast('Backup Saved To '+dst,'download');
+    }else{
+     // Debug browser mode only: the browser's download folder is the user's own.
+     const r=await fetch('/api/backup/export'+(pass?'?passphrase='+encodeURIComponent(pass):''));
+     if(!r.ok)throw new Error('HTTP '+r.status);
+     const blob=await r.blob();
+     const m=/filename="?([^";]+)"?/.exec(r.headers.get('Content-Disposition')||'');
+     const u=URL.createObjectURL(blob);
+     const link=document.createElement('a');
+     link.href=u;link.download=m?m[1]:'Umbra-Backup.zip';
+     document.body.appendChild(link);link.click();link.remove();
+     setTimeout(()=>URL.revokeObjectURL(u),4000);
+     toast(pass?'Encrypted Backup Exported':'Backup Exported','download');
+    }
    }catch(err){toast('Backup Failed: '+err.message,'alert-triangle')}
+   if(prog){prog.stop();closeModal()}
    a.disabled=false;
   };
   openModal([{title:'Export Backup',icon:'download',html:()=>`
@@ -618,13 +663,31 @@ else if(act==='set-player'){settings.player=a.dataset.v;saveSettings();toast('Pl
    const doRestore=async(pw)=>{
     const btn=document.getElementById('bk-rst');
     const busy=(on)=>{if(!btn)return;btn.disabled=on;if(on){toast('Restoring...','wait');btn.querySelector('i').style.display='none'}};
+    let prog=null;
     try{
     const fd=new FormData();fd.append('file',f);
-    const r=await fetch('/api/backup/restore?confirm=RESTORE',{method:'POST',body:fd});
-    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||('HTTP '+r.status))}
+    await new Promise((res,rej)=>{
+     // XHR, not fetch: only XHR exposes upload progress for the transfer bar.
+     const xhr=new XMLHttpRequest();
+     xhr.open('POST','/api/backup/restore?confirm=RESTORE'+(window.__UMBRA_TOKEN?'&t='+encodeURIComponent(window.__UMBRA_TOKEN):''));
+     xhr.upload.onprogress=e=>{
+      if(!prog){prog=openBkProgress('Restore Backup','Uploading Backup...')}
+      prog.set(e.loaded/e.total*100,e.loaded<e.total?'Uploading Backup...':'Server Processing...');
+     };
+     xhr.onerror=()=>rej(new Error('Network Error'));
+     xhr.onload=()=>{
+      if(xhr.status>=200&&xhr.status<300)return res();
+      let d='HTTP '+xhr.status;
+      try{d=JSON.parse(xhr.responseText).detail||d}catch(e){}
+      rej(new Error(d));
+     };
+     xhr.send(fd);
+    });
+    if(prog)prog.stop();
     closeModal();toast('Backup Restored - Reloading...','history');
     setTimeout(()=>location.reload(),900);
     }finally{
+    if(prog)prog.stop();
     busy(false);
     }
    };

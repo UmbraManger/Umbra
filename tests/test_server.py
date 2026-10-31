@@ -326,6 +326,30 @@ class DestructiveEndpointTests(ServerCase):
         self.assertEqual(r.status_code, 413, r.text)
 
 
+class BackupRouteTests(ServerCase):
+    def test_progress_endpoint_reports_engine_dict(self):
+        r = self.client.get("/api/backup/progress", headers=self.h)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("phase", r.json())
+
+    def test_export_rejects_a_bad_destination(self):
+        r = self.client.get("/api/backup/export", headers=self.h,
+                            params={"path": "no/such/dir/x.zip"})
+        self.assertEqual(r.status_code, 400)
+        r = self.client.get("/api/backup/export", headers=self.h,
+                            params={"path": "../out.zip"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_export_writes_to_a_dialog_picked_path(self):
+        dst = os.path.join(self._tmp, "Chosen.zip")
+        r = self.client.get("/api/backup/export", headers=self.h, params={"path": dst})
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["ok"])
+        self.assertEqual(os.path.getsize(dst), r.json()["bytes"])
+        with zipfile.ZipFile(dst) as z:
+            self.assertIn("obscura.db", z.namelist())
+
+
 class KnownBugTests(ServerCase):
     def test_deleting_the_video_file_fails_closed_without_scan_folders(self):
         """Regression (analysis #7, fixed): no scan folders configured → the file

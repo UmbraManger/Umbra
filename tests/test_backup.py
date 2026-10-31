@@ -73,6 +73,20 @@ class RoundTripTests(BackupCase):
         files = unzip(backup.export_zip())
         self.assertEqual(json.loads(files["settings.json"])["ai"]["key"], "")
 
+    def test_export_progress_counts_up_and_completes(self):
+        self.seed()
+        backup.export_zip()
+        p = backup.progress()
+        self.assertEqual(p["phase"], "export")
+        self.assertEqual(p["done"], p["total"])
+        self.assertGreater(p["total"], 0)
+
+    def test_restore_progress_phases(self):
+        self.seed()
+        data = backup.export_zip()
+        backup.restore_zip(data)
+        self.assertEqual(backup.progress()["phase"], "done")
+
 
 class RejectionTests(BackupCase):
     def setUp(self):

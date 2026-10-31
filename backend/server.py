@@ -26,7 +26,7 @@ db.connect()
 # (schema incl. positions + column migrations lives in db._migrate)
 log = logging.getLogger("umbra")
 
-APP_VERSION = "1.4"
+APP_VERSION = "1.5"
 app = FastAPI(title="Umbra", version=APP_VERSION)
 
 # ---- security: per-run token + Host/Origin enforcement ----
@@ -1116,15 +1116,42 @@ def wipe_all(body: dict = Body(default={})):
     return {"ok": True}
 
 # ---- backup / restore ----
+_FILENAME_RE = re.compile(r"^[A-Za-z0-9 _().-]+\.(?:zip|obk)$")
+
+
+def _safe_backup_path(path: str) -> bool:
+    """Export destination comes from the app's own native save dialog. A valid
+    destination: existing parent dir (user picks it), sane filename, zip/ext."""
+    try:
+        dirn = os.path.dirname(os.path.abspath(path))
+        if not os.path.isabs(path) or not os.path.isdir(dirn):
+            return False
+        return bool(_FILENAME_RE.match(os.path.basename(path)))
+    except Exception:
+        return False
+
+
 @app.get("/api/backup/export")
-def backup_export():
+def backup_export(path: str = ""):
     # Intentionally sync / threadpooled: the export is an O(n) file-archive
     # walk over the library. Offloading to a thread would only add a thread
     # hop with no benefit — never change this back to a blocking async def.
+    if path and not _safe_backup_path(path):
+        raise HTTPException(400, "bad destination path")
     data = backup_engine.export_zip()
+    if path:
+        # Native save dialog picked a folder we can show the user afterwards.
+        with open(path, "wb") as f:
+            f.write(data)
+        return {"ok": True, "path": path, "bytes": len(data)}
     stamp = time.strftime("%Y%m%d-%H%M")
     return Response(content=data, media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="Umbra-Backup-{stamp}.zip"'})
+
+
+@app.get("/api/backup/progress")
+def backup_progress():
+    return backup_engine.progress()
 
 @app.post("/api/backup/restore")
 async def backup_restore(request: Request, file: UploadFile = File(...),

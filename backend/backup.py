@@ -7,6 +7,13 @@ import crypto
 
 NAME_DB, NAME_SET, NAME_IMG, NAME_SCAN = "obscura.db", "settings.json", "imgprot.json", "scanstate.json"
 
+# Coarse progress for the backup UI (polled via /api/backup/progress).
+_PROGRESS = {"phase": "", "done": 0, "total": 0}
+
+
+def progress():
+    return dict(_PROGRESS)
+
 def _safe_members(zf: zipfile.ZipFile) -> list[str]:
     bad = []
     for n in zf.namelist():
@@ -17,6 +24,19 @@ def _safe_members(zf: zipfile.ZipFile) -> list[str]:
     return bad
 
 def export_zip() -> bytes:
+    # Count members up front so the UI bar has a real denominator.
+    total = 1          # the database copy
+    if os.path.isdir(os.path.join(db.DATA_DIR, "encrypted")):
+        total += sum(1 for fn in os.listdir(os.path.join(db.DATA_DIR, "encrypted"))
+                     if os.path.isfile(os.path.join(os.path.join(db.DATA_DIR, "encrypted"), fn)))
+    if os.path.isdir(db.SCRAPER_DIR):
+        total += sum(1 for fn in os.listdir(db.SCRAPER_DIR)
+                     if os.path.isfile(os.path.join(db.SCRAPER_DIR, fn)))
+    total += 2         # imgprot.json + scanstate.json
+    total += 1 if os.path.isfile(os.path.join(db.DATA_DIR, NAME_IMG)) else 0
+    total += 1 if os.path.isfile(os.path.join(db.DATA_DIR, NAME_SCAN)) else 0
+    total += 1         # settings.json
+    _PROGRESS.update(phase="export", done=0, total=max(total, 1))
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         tmp = db.DB_PATH + ".bak"
@@ -40,6 +60,7 @@ def export_zip() -> bytes:
             for suffix in ("", "-wal", "-shm"):
                 try: os.remove(tmp + suffix)
                 except OSError: pass
+        _PROGRESS["done"] += 1
         for folder, arc in ((os.path.join(db.DATA_DIR, "encrypted"), "encrypted"),
                             (db.SCRAPER_DIR, "scrapers")):
             if os.path.isdir(folder):
@@ -47,14 +68,17 @@ def export_zip() -> bytes:
                     p = os.path.join(folder, fn)
                     if os.path.isfile(p):
                         z.write(p, arc + "/" + fn)
+                        _PROGRESS["done"] += 1
         for src_path, arc in ((os.path.join(db.DATA_DIR, NAME_IMG), NAME_IMG),
                               (os.path.join(db.DATA_DIR, NAME_SCAN), NAME_SCAN)):
             if os.path.isfile(src_path):
                 z.write(src_path, arc)
+                _PROGRESS["done"] += 1
         s = db.get_settings()
         if isinstance(s, dict) and isinstance(s.get("ai"), dict):
             s = dict(s); s["ai"] = dict(s["ai"]); s["ai"]["key"] = ""
         z.writestr(NAME_SET, json.dumps(s, indent=2))
+        _PROGRESS["done"] = _PROGRESS["total"]
     return buf.getvalue()
 
 
@@ -79,6 +103,10 @@ def _scrub_ai_key(con: sqlite3.Connection) -> None:
 
 def restore_zip(data: bytes) -> int:
     zf = zipfile.ZipFile(io.BytesIO(data))
+    # Clear the previous run's numbers immediately: while the upload is still
+    # transferring, /api/backup/progress must report nothing (phase=""), not a
+    # stale export snapshot.
+    _PROGRESS.update(phase="", done=0, total=0)
     bad = _safe_members(zf)
     if bad: raise ValueError("unsafe entries in backup: " + ", ".join(bad[:3]))
     if NAME_DB not in zf.namelist():
@@ -96,6 +124,8 @@ def restore_zip(data: bytes) -> int:
     file_entries = []            # (staged path, final dest)
     dir_entries = []             # final dirs to recreate
     try:
+        total = max(len(zf.namelist()), 1)
+        _PROGRESS.update(phase="stage", done=0, total=total)
         for name in zf.namelist():
             if name == NAME_DB: continue
             if not (name in (NAME_IMG, NAME_SCAN, NAME_SET) or
@@ -111,6 +141,7 @@ def restore_zip(data: bytes) -> int:
             with zf.open(name) as src, open(sp, "wb") as out:
                 shutil.copyfileobj(src, out)   # raises on corrupt member
             file_entries.append((sp, dest))
+            _PROGRESS["done"] += 1
     except Exception:
         shutil.rmtree(stage, ignore_errors=True)
         raise
@@ -144,6 +175,7 @@ def restore_zip(data: bytes) -> int:
     if os.path.exists(db.DB_PATH):
         shutil.copy2(db.DB_PATH, db.DB_PATH + ".prev")
     os.replace(staged, db.DB_PATH)
+    _PROGRESS["done"] += 1          # the big member is staged now too
     # Both sides are already verified: only renames remain. If one fails the
     # staging dir is kept for manual recovery.
     for d in dir_entries:
@@ -170,4 +202,5 @@ def restore_zip(data: bytes) -> int:
     if cur.get("pyScrapers"):
         cur["pyScrapers"] = False
         db.save_settings(cur)
+    _PROGRESS.update(phase="done", done=1, total=1)
     return len(zf.namelist())
