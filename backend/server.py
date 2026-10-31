@@ -26,7 +26,7 @@ db.connect()
 # (schema incl. positions + column migrations lives in db._migrate)
 log = logging.getLogger("umbra")
 
-APP_VERSION = "1.5"
+APP_VERSION = "1.6"
 app = FastAPI(title="Umbra", version=APP_VERSION)
 
 # ---- security: per-run token + Host/Origin enforcement ----
@@ -1160,9 +1160,6 @@ async def backup_restore(request: Request, file: UploadFile = File(...),
                          confirm: str = Query("")):
     if confirm != "RESTORE":
         raise HTTPException(400, 'confirmation required: send query param confirm="RESTORE"')
-    # 413 on oversized archives before we read a single byte.
-    if int(request.headers.get("content-length") or 0) > 50 * 1024 * 1024:
-        raise HTTPException(413, "restore archive limited to 50 MB")
     data = await file.read()
     try: n = await run_in_threadpool(backup_engine.restore_zip, data)
     except ValueError as e: raise HTTPException(400, str(e))

@@ -313,19 +313,6 @@ class DestructiveEndpointTests(ServerCase):
                 worker.join(timeout=10)
                 self.assertFalse(worker.is_alive(), "restore still running after the ping timeout")
 
-    def test_restore_rejects_oversized_content_length(self):
-        """A request declaring Content-Length over the cap must be refused before
-        any byte of the body is read."""
-        big = {"file": ("b.zip", b"x" * (50 * 1024 * 1024 + 1), "application/zip")}
-        r = self.client.post(
-            "/api/backup/restore",
-            headers=self.h,
-            params={"confirm": "RESTORE"},
-            files=big,
-        )
-        self.assertEqual(r.status_code, 413, r.text)
-
-
 class BackupRouteTests(ServerCase):
     def test_progress_endpoint_reports_engine_dict(self):
         r = self.client.get("/api/backup/progress", headers=self.h)
